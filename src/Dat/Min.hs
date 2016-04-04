@@ -14,7 +14,7 @@ import Dat.Utils
 
 type Pillar = Vector PillarBlock
 type PillarBlock = Maybe (FrameNum, PillarType)
-type FrameNum = Word16
+type FrameNum = Int
 type PillarType = Word16
 
 load :: String -> ByteString -> Vector Pillar
@@ -30,7 +30,7 @@ load minName buffer =
       rawBlockValue <- getWord16le
       let frameNumPlus1 = rawBlockValue .&. 0x0FFF
       if frameNumPlus1 /= 0
-        then return $ Just (frameNumPlus1 - 1, (rawBlockValue .&. 0x7000) `shiftR` 12)
+        then return $ Just (fromIntegral $ frameNumPlus1 - 1, (rawBlockValue .&. 0x7000) `shiftR` 12)
         else return Nothing
     blockCountPerPillar = getBlockCountPerPillar minName
 

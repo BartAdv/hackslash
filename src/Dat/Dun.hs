@@ -1,20 +1,30 @@
 -- https://github.com/doggan/diablo-file-formats
 module Dat.Dun
-       (load) where
+       (Dun(..)
+       ,load) where
 
 import Control.Monad (replicateM)
 import Data.Binary.Strict.Get (getWord16le)
 import Data.Word (Word16)
 import Data.Vector ((!), fromList)
 import Dat.Til (Til)
+import Linear.Affine
+import Linear.V2
 
 import Dat.Utils
+import Dat.Min (Pillar)
 
-load :: String -> Vector Til -> ByteString -> Either String (Int, Int, Vector (Maybe Int))
-load dunName tils buffer = do
+data Dun = Dun { dunColCount :: Int
+               , dunRowCount :: Int
+               , dunPillars :: Vector (Maybe Pillar)
+               , dunStartCoords :: Point V2 Int }
+
+load :: String -> Vector Til -> Vector Pillar -> ByteString -> Either String Dun
+load dunName tils pillars buffer = do
   (colCount, rowCount, rawPillarData) <- fst $ runGet readRawPillarData buffer
   let unpacked = unpackTils colCount rowCount (fromList rawPillarData)
-  return (colCount * 2, rowCount * 2, unpacked)
+      pillars' = fmap (fmap (pillars !)) unpacked
+  return $ Dun (colCount * 2) (rowCount * 2) pillars' startCoords
   where
     unpackTils :: Int -> Int -> Vector Word16 -> Vector (Maybe Int)
     unpackTils colCount rowCount rawPillarData =
@@ -31,7 +41,11 @@ load dunName tils buffer = do
       rowCount <- getWord16le
       rawData <- replicateM (fromIntegral rowCount * fromIntegral colCount) getWord16le
       return (fromIntegral colCount, fromIntegral rowCount, rawData)
+    startCoords = getStartCoord dunName
 
-    -- // levels/towndata/sector1s.dun -> sector1s
-    -- var dunName = path.basename(dunPath, '.dun');
-    -- var startCoord = getStartCoord(dunName);
+getStartCoord :: String -> Point V2 Int
+getStartCoord "sector1s" = P $ V2 46 46
+getStartCoord "sector2s" = P $ V2 46 0
+getStartCoord "sector3s" = P $ V2 0 46
+getStartCoord "sector4s" = P $ V2 0 0
+getStartCoord _ = undefined

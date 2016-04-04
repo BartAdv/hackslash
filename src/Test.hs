@@ -1,3 +1,6 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards #-}
+
 import Control.Monad
 import qualified Data.ByteString as BS
 import Data.Maybe
@@ -7,10 +10,12 @@ import Linear.Affine
 import Linear.V2
 import SDL hiding (copy)
 import SDL.Raw.Video (saveBMP)
-import System.FilePath.Posix ((</>))
+import System.FilePath.Posix ((</>), (<.>))
 
 import Dat.Cel
+import           Dat.Dun (Dun(..))
 import qualified Dat.Dun as Dun
+import           Dat.Min (Pillar(..))
 import qualified Dat.Min as Min
 import qualified Dat.Til as Til
 
@@ -20,16 +25,30 @@ path :: FilePath
 path = "diabdat/levels/towndata/"
 
 testDun = do
-  tils <- BS.readFile (path </> "town.til") >>= return . Til.load
-  Right (colCount, rowCount, dun) <- BS.readFile (path </> "sector1s.dun") >>= return . Dun.load "sector1s" tils
+  let levelName = "town"
+  pal <- BS.readFile (path </> levelName <.> ".pal")
+  townCel <- BS.readFile (path </> levelName <.> ".cel")
+  let (Right townCels) = loadCel townCel "town"
+  tils <- BS.readFile (path </> levelName <.> ".til") >>= return . Til.load
   mins <- BS.readFile (path </> "town.min") >>= return . Min.load "town"
-  let pillars = fmap (pillar mins) dun
-  return (colCount, rowCount, pillars)
+  Right Dun{..} <- BS.readFile (path </> "sector1s.dun") >>= return . Dun.load "sector1s" tils mins
+  surfaces <- celSurfaces townCels pal >>= return . fromList
+
+  bmpSurface <- createRGBSurface (V2 1024 1024) RGBA8888
+  filename <- newCString "test.bmp"
+  let (Surface ptr _) = bmpSurface
+  _ <- saveBMP ptr filename
+  return ()
   where
     pillar :: Vector Min.Pillar -> Maybe Int -> Maybe Min.Pillar
     pillar mins (Just minIdx) = Just $ mins ! minIdx
     pillar _ Nothing = Nothing
-
+    drawPillar :: Vector Surface -> Surface -> Pillar -> (Int, Int) -> IO ()
+    drawPillar surfaces target pillar (x, y) =
+      mapM_ (\(i, p) -> let (bx, by) = (i `mod` 2 * 32, i `div` 2 * 32)
+                            coord = fmap fromIntegral $ P $ V2 (bx + x) (by + y)
+                            surface = surfaces ! i
+                        in surfaceBlit surface Nothing target (Just coord)) $ zip [0..] (toList pillar)
 --
 
 frames :: [Maybe Int]
@@ -41,8 +60,8 @@ pillarFrames pillar =
 
 testCels :: [Maybe Int] -> IO ()
 testCels frames = do
-  pal <- BS.readFile "diabdat/levels/towndata/town.pal"
-  townCel <- BS.readFile "diabdat/levels/towndata/town.cel"
+  pal <- BS.readFile (path </> "town.pal")
+  townCel <- BS.readFile (path </> "town.cel")
   let (Right townCels) = fmap fromList $ loadCel townCel "town"
   print $ length townCels
   surfaces <- mapM (maybe (return Nothing) (\frame -> fmap (Just . head) $ celSurfaces [townCels ! frame] pal)) frames
@@ -54,3 +73,15 @@ testCels frames = do
   let (Surface ptr _) = bmpSurface
   _ <- saveBMP ptr filename
   return ()
+
+loadTown = do
+  pils <- BS.readFile (path </> "town.min") >>= return . Min.load "town"
+  tils <- BS.readFile (path </> "town.til") >>= return . Til.load
+  Right sector1s <- readSector tils pils "sector1s"
+  Right sector2s <- readSector tils pils "sector2s"
+  Right sector3s <- readSector tils pils "sector3s"
+  Right sector4s <- readSector tils pils "sector4s"
+  return (sector1s, sector2s, sector3s, sector4s)
+  where
+    readSector tils pils name = BS.readFile (path </> name <.> ".dun") >>= return . Dun.load name tils pils
+    path = "diabdat/levels/towndata"

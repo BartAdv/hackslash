@@ -8,6 +8,7 @@ import           FRP.Yampa
 import           Prelude             hiding (init)
 
 import Input
+import Level
 
 data Game = Game { foobar :: Int }
 
