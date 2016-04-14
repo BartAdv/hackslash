@@ -17,10 +17,10 @@ type PillarBlock = Maybe (FrameNum, PillarType)
 type FrameNum = Int
 type PillarType = Word16
 
-load :: String -> ByteString -> Vector Pillar
+load :: String -> ByteString -> Either String (Vector Pillar)
 load minName buffer =
-  let (Right res, _) = runGet readPillars buffer
-  in fromList (fmap fromList res)
+  let (res, _) = runGet readPillars buffer
+  in fmap (fromList . (fmap fromList)) res
   where
     readPillars = do
       blocks <- replicateM blockCountPerPillar readPillarBlock

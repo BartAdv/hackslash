@@ -11,10 +11,10 @@ import Dat.Utils
 type Til = Vector TilIndex
 type TilIndex = Int
 
-load :: ByteString -> Vector Til
+load :: ByteString -> Either String (Vector Til)
 load buffer =
-  let (Right res, _) = runGet readSquares buffer
-  in (fromList res)
+  let (res, _) = runGet readSquares buffer
+  in fmap fromList res
   where
     readSquares = do
       squares <- fmap fromList $ replicateM 4 (fmap fromIntegral getWord16le)

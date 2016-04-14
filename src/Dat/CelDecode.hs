@@ -9,8 +9,6 @@ import Data.List (foldl')
 
 import qualified Data.ByteString as BS
 
-import Debug.Trace
-
 -- palette idx, Nothing for transparent
 type CelColor = Maybe Word8
 
@@ -142,11 +140,11 @@ getCelFrameDecoder :: String -> ByteString -> Int -> FrameDecoder
 getCelFrameDecoder celName frameData frameNum =
   if elem celName ["l1", "l2", "l3", "l4", "town"]
   then case (BS.length frameData) of
-         0x400 -> if isType0 celName frameNum then trace "0" $ decodeFrameType0 else trace "1" $ decodeFrameType1
+         0x400 -> if isType0 celName frameNum then decodeFrameType0 else decodeFrameType1
          0x220 -> if isType2or4 frameData
-                  then trace "2" $ decodeFrameType2 else
-                    if isType3or5 frameData then trace "3" $ decodeFrameType3 else trace "1" $ decodeFrameType1
-         0x320 -> if isType2or4 frameData then trace "4" $ decodeFrameType4 else
-                    if isType3or5 frameData then trace "5" $ decodeFrameType5 else trace "1" $ decodeFrameType1
-         _ -> trace "1" $ decodeFrameType1
-  else trace "1" $ decodeFrameType1
+                  then decodeFrameType2 else
+                    if isType3or5 frameData then decodeFrameType3 else decodeFrameType1
+         0x320 -> if isType2or4 frameData then decodeFrameType4 else
+                    if isType3or5 frameData then decodeFrameType5 else decodeFrameType1
+         _ -> decodeFrameType1
+  else decodeFrameType1

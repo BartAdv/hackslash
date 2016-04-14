@@ -1,6 +1,10 @@
-module Level where
+module Level
+       (Level(..)) where
 
 import Data.Vector
 
-data Tile = Tile { tileFoo :: Int }
-type Level = Vector Tile
+import Dat.Min(Pillar)
+
+data Level = Level { levelWidth :: Int
+                   , levelHeight :: Int
+                   , levelPillars :: Vector (Maybe Pillar)}
