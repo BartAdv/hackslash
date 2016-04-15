@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -11,13 +12,13 @@ import Data.List (find)
 import Data.Maybe
 import Data.Vector (Vector, fromList, toList, (!))
 import qualified Data.Vector as V
-import Debug.Trace
+
 
 import Foreign.C.String (newCString, withCString)
 import Foreign.Store
 import Linear.Affine
 import Linear.V2
-import SDL hiding (copy)
+import SDL
 import SDL.Raw.Video (saveBMP)
 import System.FilePath.Posix ((</>), (<.>))
 
@@ -26,40 +27,13 @@ import           Dat.Dun (Dun(..))
 import qualified Dat.Dun as Dun
 import           Dat.Min (Pillar(..))
 import qualified Dat.Min as Min
-import qualified Dat.Til as Til
-
+import           Dat.Til
+import qualified Dat.Pal as Pal
 import Graphics
 import Level
 
 path :: FilePath
 path = "diabdat/levels/towndata/"
-
-testDun = do
-  let levelName = "town"
-  pal <- BS.readFile (path </> levelName <.> ".pal")
-  townCel <- BS.readFile (path </> levelName <.> ".cel")
-  let (Right townCels) = loadCel townCel "town"
-  Right tils <- BS.readFile (path </> levelName <.> ".til") >>= return . Til.load
-  Right mins <- BS.readFile (path </> "town.min") >>= return . Min.load "town"
-  Right Dun{..} <- BS.readFile (path </> "sector1s.dun") >>= return . Dun.load "sector1s" tils mins
-  surfaces <- celSurfaces townCels pal >>= return . fromList
-
-  bmpSurface <- createRGBSurface (V2 1024 1024) RGBA8888
-  filename <- newCString "test.bmp"
-  let (Surface ptr _) = bmpSurface
-  _ <- saveBMP ptr filename
-  return ()
-  where
-    pillar :: Vector Min.Pillar -> Maybe Int -> Maybe Min.Pillar
-    pillar mins (Just minIdx) = Just $ mins ! minIdx
-    pillar _ Nothing = Nothing
-    drawPillar :: Vector Surface -> Surface -> Pillar -> (Int, Int) -> IO ()
-    drawPillar surfaces target pillar (x, y) =
-      mapM_ (\(i, p) -> let (bx, by) = (i `mod` 2 * 32, i `div` 2 * 32)
-                            coord = fmap fromIntegral $ P $ V2 (bx + x) (by + y)
-                            surface = surfaces ! i
-                        in surfaceBlit surface Nothing target (Just coord)) $ zip [0..] (toList pillar)
---
 
 frames :: [Maybe Int]
 frames = [Nothing,Nothing,Nothing,Just 1181,Nothing,Just 1182,Nothing,Just 1183,Just 1184,Just 1185,Just 1186,Just 1187,Just 1188,Just 1189,Just 1190,Just 1191]
@@ -68,23 +42,23 @@ pillarFrames :: Min.Pillar -> [Maybe Int]
 pillarFrames pillar =
   map (fmap (fromIntegral . fst)) $ toList pillar
 
-loadCels :: String -> IO (Vector Surface)
+loadCels :: String -> IO (Vector DecodedCel)
 loadCels levelName = do
   pal <- BS.readFile (path </> levelName <.> ".pal")
   townCel <- BS.readFile (path </> levelName <.> ".cel")
   let (Right townCels) = loadCel townCel "town"
-  celSurfaces townCels pal >>= return . fromList
+  return $ fromList townCels
 
 readSector tils pils name = BS.readFile (path </> name <.> ".dun") >>= return . Dun.load name tils pils
 
 -- printDun = do
 --   Right pils <- BS.readFile (path </> "town.min") >>= return . Min.load "town"
---   Right tils <- BS.readFile (path </> "town.til") >>= return . Til.load
+--   Right tils <- BS.readFile (path </> "town.til") >>= return . loadTil
 --   Right sector1s <- readSector tils pils "sector1s"
 
 loadTown = do
   Right pils <- BS.readFile (path </> "town.min") >>= return . Min.load "town"
-  Right tils <- BS.readFile (path </> "town.til") >>= return . Til.load
+  Right tils <- BS.readFile (path </> "town.til") >>= return . loadTil
   Right sector1s <- readSector tils pils "sector1s"
   Right sector2s <- readSector tils pils "sector2s"
   Right sector3s <- readSector tils pils "sector3s"
@@ -129,12 +103,47 @@ testLevel celSurfaces Level{..} = do
     _ <- saveBMP ptr filename
     return ()
 
-loadSurfaces = do
-  surfaces <- loadCels "town"
-  newStore surfaces
+data Assets = Assets
+  { assetsCels :: Vector DecodedCel
+  , assetsPalette :: Pal.Palette
+  , assetsLevel :: Level }
 
-test = do
-  Just store <- lookupStore 0 :: IO (Maybe (Store (Vector Surface)))
-  surfaces <- readStore store
+loadAssets levelName = do
+  cels <- loadCels levelName
+  pal <- BS.readFile (path </> levelName <.> ".pal")
   level <- loadTown
-  testLevel surfaces level
+  newStore $ Assets cels pal level
+
+getAssets = do
+  Just store <- lookupStore 0 :: IO (Maybe (Store Assets))
+  readStore store
+
+testSDL :: IO ()
+testSDL = do
+  SDL.initializeAll
+
+  let winConfig = SDL.defaultWindow { SDL.windowPosition = SDL.Absolute (P (V2 100 100))
+                                    , SDL.windowInitialSize = V2 640 480 }
+
+      rdrConfig = SDL.RendererConfig { SDL.rendererType = SDL.AcceleratedVSyncRenderer
+                                     , SDL.rendererTargetTexture = True }
+
+  window <- SDL.createWindow "Testing" winConfig
+  renderer <- SDL.createRenderer window (-1) rdrConfig
+
+  Assets{..} <- getAssets
+
+  let pillar = fromJust $ (levelPillars assetsLevel) ! 0
+  PillarTexture{..} <- createPillarTexture renderer assetsPalette assetsCels pillar
+
+  SDL.clear renderer
+  SDL.copy renderer pillarTexture Nothing (Just $ SDL.Rectangle (P $ V2 32 32) pillarTextureSize)
+  SDL.present renderer
+
+  SDL.delay 4000
+
+  SDL.destroyTexture pillarTexture
+  SDL.destroyRenderer renderer
+  SDL.destroyWindow window
+
+  SDL.quit

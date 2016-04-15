@@ -1,7 +1,7 @@
 -- https://github.com/doggan/diablo-file-formats
 module Dat.Til
        (Til
-       ,load) where
+       ,loadTil) where
 
 import Control.Monad (replicateM)
 import Data.Binary.Strict.Get (isEmpty, getWord16le)
@@ -11,8 +11,8 @@ import Dat.Utils
 type Til = Vector TilIndex
 type TilIndex = Int
 
-load :: ByteString -> Either String (Vector Til)
-load buffer =
+loadTil :: ByteString -> Either String (Vector Til)
+loadTil buffer =
   let (res, _) = runGet readSquares buffer
   in fmap fromList res
   where

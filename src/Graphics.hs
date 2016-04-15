@@ -1,32 +1,53 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedLists #-}
 module Graphics
-       (celSurfaces) where
+       (PillarTexture(..)
+       ,createPillarTexture) where
 
-import Prelude
+import Data.List (groupBy)
+import Data.Maybe (isJust, fromJust)
 import Data.Word (Word8)
-import qualified Data.Vector.Storable.Mutable as MV
+import Data.Vector (Vector, (!))
+import Data.ByteString (ByteString, pack)
+import qualified Data.Vector as V
+import Foreign.C.Types
+import Linear.Affine
+import Linear.V2
 import SDL hiding (copy)
-import Linear.V2 (V2(..))
 
 import Dat.Cel
 import qualified Dat.Pal as Pal
+import Dat.Min
 
-celSurfaces :: [DecodedCel] -> Pal.Palette -> IO [Surface]
-celSurfaces frames palette = mapM frameSurface frames
+framePixels :: Pal.Palette -> DecodedCel -> ByteString
+framePixels palette DecodedCel{..} =
+  -- flip it vertically
+  let pitch = decodedCelWidth * 4
+      rows = groupBy
+               (\(i1,_) (i2,_) -> i1 `div` pitch == i2 `div` pitch)
+               (zip [0..] (getColors decodedCelColors))
+  in pack $ map snd $ concat $ reverse rows
   where
-    frameSurface :: DecodedCel -> IO Surface
-    frameSurface DecodedCel{..} = do
-      let pitch = decodedCelWidth * 4
-      pixels <- MV.new $ decodedCelWidth * decodedCelHeight * 4
-      -- flip it vertically
-      mapM_ (\(i,c) -> let px = (decodedCelHeight-1 - i `div` pitch) * pitch + i `mod` pitch
-                       in MV.write pixels px c)
-            (zip [0..] (getColors decodedCelColors))
-      createRGBSurfaceFrom
-                   pixels
-                   (fmap fromIntegral (V2 decodedCelWidth decodedCelHeight))
-                   (fromIntegral pitch)
-                   RGBA8888
     getColors :: [CelColor] -> [Word8]
     getColors = concat . fmap (maybe [0, 0, 0, 0] (\c -> let (r,g,b) = Pal.getColor palette c in [0xff, b, g, r]))
+
+data PillarTexture = PillarTexture
+  { pillarTexture :: Texture
+  , pillarTextureSize :: V2 CInt }
+
+createPillarTexture :: Renderer
+                    -> Pal.Palette
+                    -> Vector DecodedCel
+                    -> Pillar
+                    -> IO PillarTexture
+createPillarTexture renderer palette cels pillar = do
+  let pillarBlocks = fmap fromJust $ V.filter isJust pillar
+      height = V.length pillarBlocks `div` 2 * 32
+      width  = 64
+  tex <- createTexture renderer RGBA8888 TextureAccessStatic (fmap fromIntegral $ V2 width height)
+  mapM_ (\(i, (frameNum, _)) -> do
+            let cel = cels ! frameNum
+                (x,y) = (i `mod` 2 * 32, i `div` 2 * 32)
+                pixels = framePixels palette cel
+            updateTexture tex (Just $ Rectangle (P (V2 x y)) (V2 32 32)) pixels (32 * 4)) $ zip [0..] (V.toList pillarBlocks)
+  return $ PillarTexture tex (fmap fromIntegral $ V2 width height)
