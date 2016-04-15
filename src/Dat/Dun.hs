@@ -17,7 +17,7 @@ import Dat.Min (Pillar)
 data Dun = Dun { dunColCount :: Int
                , dunRowCount :: Int
                , dunPillars :: Vector (Maybe Pillar)
-               , dunStartCoords :: Point V2 Int }
+               , dunStartCoords :: Point V2 Int}
 
 load :: String -> Vector Til -> Vector Pillar -> ByteString -> Either String Dun
 load dunName tils pillars buffer = do
@@ -28,9 +28,9 @@ load dunName tils pillars buffer = do
   where
     unpackTils :: Int -> Int -> Vector Word16 -> Vector (Maybe Int)
     unpackTils colCount rowCount rawPillarData =
-      fromList $ fmap parsePillarData [(row, col) | row <- [0..rowCount*2 - 2], col <- [0..colCount*2 - 2]]
-      where parsePillarData (row, col) =
-              let squareIndexPlus1 = rawPillarData ! (row*colCount `div` 2 + col `div` 2)
+      fromList $ fmap parsePillarData [(col, row) | row <- [0..rowCount*2 - 1], col <- [0..colCount*2 - 1]]
+      where parsePillarData (col, row) =
+              let squareIndexPlus1 = rawPillarData ! (row `div` 2 * colCount + col `div` 2)
               in if squareIndexPlus1 /= 0
                  then let tilIdx = row `mod` 2 * 2 + col `mod` 2
                           til = tils ! (fromIntegral squareIndexPlus1 - 1)

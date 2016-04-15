@@ -8,8 +8,11 @@ import           Input
 import           Rendering
 import           System.Random (newStdGen)
 
+import Test
+
 main :: IO ()
 main = do
-  g <- newStdGen
-  animate "Yamplo" 640 480 $
-    parseWinInput >>> (game g &&& handleExit)
+  test
+  -- g <- newStdGen
+  -- animate "Yamplo" 640 480 $
+  --   parseWinInput >>> (game g &&& handleExit)

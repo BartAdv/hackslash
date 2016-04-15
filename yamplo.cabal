@@ -24,6 +24,7 @@ executable yamplo
                      , binary-strict == 0.4.8.3
                      , bytestring == 0.10.6.0
                      , filepath >= 1.4.0.0
+                     , foreign-store
                      , linear
                      , random
                      , sdl2 == 2.1.2

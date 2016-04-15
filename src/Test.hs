@@ -3,6 +3,8 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedLists #-}
 
+module Test where
+
 import Control.Monad
 import qualified Data.ByteString as BS
 import Data.List (find)
@@ -12,6 +14,7 @@ import qualified Data.Vector as V
 import Debug.Trace
 
 import Foreign.C.String (newCString, withCString)
+import Foreign.Store
 import Linear.Affine
 import Linear.V2
 import SDL hiding (copy)
@@ -72,6 +75,13 @@ loadCels levelName = do
   let (Right townCels) = loadCel townCel "town"
   celSurfaces townCels pal >>= return . fromList
 
+readSector tils pils name = BS.readFile (path </> name <.> ".dun") >>= return . Dun.load name tils pils
+
+-- printDun = do
+--   Right pils <- BS.readFile (path </> "town.min") >>= return . Min.load "town"
+--   Right tils <- BS.readFile (path </> "town.til") >>= return . Til.load
+--   Right sector1s <- readSector tils pils "sector1s"
+
 loadTown = do
   Right pils <- BS.readFile (path </> "town.min") >>= return . Min.load "town"
   Right tils <- BS.readFile (path </> "town.til") >>= return . Til.load
@@ -80,8 +90,9 @@ loadTown = do
   Right sector3s <- readSector tils pils "sector3s"
   Right sector4s <- readSector tils pils "sector4s"
   let sectors :: [Dun] = [sector1s, sector2s, sector3s, sector4s]
-      w = 16 --sum $ fmap dunColCount sectors
-      h = 16 --sum $ fmap dunRowCount sectors
+      coordMin = minimum $ fmap dunStartCoords sectors
+      coordMax = maximum $ fmap (\Dun{..} -> dunStartCoords + (P $ V2 dunColCount dunRowCount)) sectors
+      P (V2 w h) = coordMax - coordMin
       pillars = [fromSectors sectors (P (V2 x y)) | y <- [0..h-1], x <- [0..w-1]]
   return $ Level w h (fromList pillars)
   where
@@ -89,9 +100,7 @@ loadTown = do
       let Just Dun{..} = find (\Dun{..} -> let (P (V2 x y)) = coords - dunStartCoords
                                            in x >= 0 && y >= 0 && x < dunColCount && y < dunRowCount) sectors
           (P (V2 x y)) = coords - dunStartCoords
-      in trace (show coords ++ ", " ++ show dunStartCoords) $ dunPillars ! (y * dunColCount + x)
-    readSector tils pils name = BS.readFile (path </> name <.> ".dun") >>= return . Dun.load name tils pils
-    path = "diabdat/levels/towndata"
+      in dunPillars ! (y * dunColCount + x)
 
 isoToScreen :: Num a => Point V2 a -> Point V2 a -> Point V2 a
 isoToScreen origin (P (V2 x y)) = origin + (P $ ax * (V2 x x) + ay * (V2 y y))
@@ -103,24 +112,29 @@ blitPillar celSurfaces targetSurface pillar (fmap fromIntegral -> coords) = do
   mapM_ (\(i, s) -> let (x, y) = (i `mod` 2 * 32, i `div` 2 * 32 - 256)
                         tc = P (V2 x y) + isoToScreen center coords
                     in when (isJust s) $
-                       trace (show tc) $ surfaceBlit (fromJust s) Nothing targetSurface (Just tc)) $ V.zip [0..15] pillarFrames
+                       surfaceBlit (fromJust s) Nothing targetSurface (Just tc)) $ V.zip [0..15] pillarFrames
     where
-      center = P (V2 320 320)
+      center = P (V2 3000 32)
       pillarFrames :: Vector (Maybe Surface)
       pillarFrames = fmap (maybe Nothing $ \(frameNum, _) -> Just $ celSurfaces ! frameNum) pillar
 
 testLevel :: Vector Surface -> Level -> IO ()
 testLevel celSurfaces Level{..} = do
-  bmpSurface <- trace "createRGBSurface" $ createRGBSurface (V2 1024 1024) RGBA8888
+  bmpSurface <- createRGBSurface (V2 6000 3100) RGBA8888
   mapM_ (\(i, p) -> let coords = P (V2 (i `mod` levelWidth) (i `div`  levelHeight))
                     in when (isJust p) $
-                       trace (show coords) $ blitPillar celSurfaces bmpSurface (fromJust p) coords) $ zip [0..] (toList levelPillars)
+                       blitPillar celSurfaces bmpSurface (fromJust p) coords) $ zip [0..] (toList levelPillars)
   withCString "test.bmp" $ \filename -> do
     let (Surface ptr _) = bmpSurface
     _ <- saveBMP ptr filename
     return ()
 
-test = do
+loadSurfaces = do
   surfaces <- loadCels "town"
+  newStore surfaces
+
+test = do
+  Just store <- lookupStore 0 :: IO (Maybe (Store (Vector Surface)))
+  surfaces <- readStore store
   level <- loadTown
   testLevel surfaces level
