@@ -1,3 +1,5 @@
+resolver: nightly-2016-06-15
+
 packages:
 - '.'
 
@@ -6,10 +8,13 @@ packages:
     #commit: 472f3abe8a9a1e8970b19e9f91a65f6c62a8a97d
   extra-dep: true
 
+- location:
+    git: git@github.com:ivanperez-keera/Yampa.git
+    commit: 68e149c5b668b61e73c87725492879416c3aad7f
+  extra-dep: true
+
 extra-deps:
 - binary-strict-0.4.8.3
-
-resolver: lts-3.13
 
 rebuild-ghc-options: true
 ghc-options:

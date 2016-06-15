@@ -4,7 +4,8 @@ module Dat.Min
        ,PillarBlock
        ,FrameNum
        ,PillarType
-       ,load) where
+       ,loadMin
+       ,getBlockCountPerPillar) where
 
 import Control.Monad (replicateM)
 import Data.Binary.Strict.Get (isEmpty, getWord16le)
@@ -17,10 +18,10 @@ type PillarBlock = Maybe (FrameNum, PillarType)
 type FrameNum = Int
 type PillarType = Word16
 
-load :: String -> ByteString -> Either String (Vector Pillar)
-load minName buffer =
+loadMin :: String -> ByteString -> Either String (Vector Pillar)
+loadMin minName buffer =
   let (res, _) = runGet readPillars buffer
-  in fmap (fromList . (fmap fromList)) res
+  in fmap (fromList . fmap fromList) res
   where
     readPillars = do
       blocks <- replicateM blockCountPerPillar readPillarBlock

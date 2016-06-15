@@ -1,0 +1,22 @@
+name: yamplo
+
+dependencies:
+ - base
+ - binary
+ - binary-strict
+ - bytestring
+ - filepath
+ - foreign-store
+ - linear
+ - random
+ - sdl2
+ - text
+ - unordered-containers
+ - vector
+ - Yampa
+
+executables:
+  yamplo:
+    main: Main.hs
+    source-dirs:
+      - src

@@ -1,14 +1,14 @@
 -- https://github.com/doggan/diablo-file-formats
 module Dat.Dun
        (Dun(..)
-       ,load) where
+       ,loadDun) where
 
 import Control.Monad (replicateM)
 import Data.Binary.Strict.Get (getWord16le)
 import Data.Word (Word16)
 import Data.Vector ((!), fromList)
 import Dat.Til (Til)
-import Linear.Affine
+import Linear.Affine (Point(..))
 import Linear.V2
 
 import Dat.Utils
@@ -19,8 +19,8 @@ data Dun = Dun { dunColCount :: Int
                , dunPillars :: Vector (Maybe Pillar)
                , dunStartCoords :: Point V2 Int}
 
-load :: String -> Vector Til -> Vector Pillar -> ByteString -> Either String Dun
-load dunName tils pillars buffer = do
+loadDun :: String -> Vector Til -> Vector Pillar -> ByteString -> Either String Dun
+loadDun dunName tils pillars buffer = do
   (colCount, rowCount, rawPillarData) <- fst $ runGet readRawPillarData buffer
   let unpacked = unpackTils colCount rowCount (fromList rawPillarData)
       pillars' = fmap (fmap (pillars !)) unpacked

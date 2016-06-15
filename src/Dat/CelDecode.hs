@@ -20,7 +20,7 @@ type FrameDecoder = ByteString -> Int -> Int -> DecodedCel
 
 decodeFrameType0 :: FrameDecoder
 decodeFrameType0 frameData width height = DecodedCel width height colors
-  where colors = fmap Just $ BS.unpack frameData
+  where colors = Just <$> BS.unpack frameData
 
 decodeFrameType1 :: FrameDecoder
 decodeFrameType1 frameData width height = DecodedCel width height colors
@@ -32,7 +32,7 @@ decodeFrameType1 frameData width height = DecodedCel width height colors
       chunkSize <- fmap fromIntegral getWord8
       chunk <- if chunkSize >= 128
                then replicateM (256 - chunkSize) (return Nothing)
-               else replicateM chunkSize (getWord8 >>= return . Just)
+               else replicateM chunkSize (fmap Just getWord8)
       empty <- isEmpty
       fmap (chunk ++) (if empty then return [] else readColors)
 
@@ -52,14 +52,14 @@ decodeFrameType4 =
   decodeFrameTypeHelper decodeCounts zeroCount decodeLineTransparencyLeft
   where
     decodeCounts = [4, 4, 8, 8, 12, 12, 16, 16, 20, 20, 24, 24, 28, 28, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32]
-    zeroCount i = if elem i [0,2,4,6,8,10,12,14] then 2 else 0
+    zeroCount i = if i `elem` [0,2,4,6,8,10,12,14] then 2 else 0
 
 decodeFrameType5 :: FrameDecoder
 decodeFrameType5 =
   decodeFrameTypeHelper decodeCounts zeroCount decodeLineTransparencyRight
   where
     decodeCounts = [4, 4, 8, 8, 12, 12, 16, 16, 20, 20, 24, 24, 28, 28, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32]
-    zeroCount i = if elem i [0,2,4,6,8,10,12,14] then 2 else 0
+    zeroCount i = if i `elem` [0,2,4,6,8,10,12,14] then 2 else 0
 
 type TransparentLineDecoder = ByteString -> Int -> Int -> Int -> [CelColor]
 
@@ -122,7 +122,7 @@ isType0 celName frameNum =
     _ -> True
   where
     oneOf :: [Int] -> Bool
-    oneOf nums = any (== frameNum) nums
+    oneOf = elem frameNum
 
 -- Returns true if the image is a less-than (<) shape.
 isType2or4 :: ByteString -> Bool
@@ -138,13 +138,14 @@ isType3or5 frameData = not $ any check [2, 3, 14, 15, 34, 35, 62, 63, 98, 99, 14
 
 getCelFrameDecoder :: String -> ByteString -> Int -> FrameDecoder
 getCelFrameDecoder celName frameData frameNum =
-  if elem celName ["l1", "l2", "l3", "l4", "town"]
-  then case (BS.length frameData) of
+  if celName `elem` ["l1", "l2", "l3", "l4", "town"]
+  then case BS.length frameData of
          0x400 -> if isType0 celName frameNum then decodeFrameType0 else decodeFrameType1
-         0x220 -> if isType2or4 frameData
-                  then decodeFrameType2 else
-                    if isType3or5 frameData then decodeFrameType3 else decodeFrameType1
-         0x320 -> if isType2or4 frameData then decodeFrameType4 else
-                    if isType3or5 frameData then decodeFrameType5 else decodeFrameType1
+         0x220 | isType2or4 frameData -> decodeFrameType2
+               | isType3or5 frameData -> decodeFrameType3
+               | otherwise -> decodeFrameType1
+         0x320 | isType2or4 frameData -> decodeFrameType4
+               | isType3or5 frameData -> decodeFrameType5
+               | otherwise -> decodeFrameType1
          _ -> decodeFrameType1
   else decodeFrameType1

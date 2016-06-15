@@ -7,6 +7,7 @@ import Control.Monad (replicateM)
 import Data.Binary.Strict.Get
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import Data.Vector (Vector, fromList)
 
 import Dat.CelDecode
 
@@ -17,14 +18,14 @@ celConfig "chest2" = (96,96,10)
 celConfig "chest3" = (96,96,10)
 celConfig _ = (32,32,0)
 
-loadCel :: ByteString -> String -> Either String [DecodedCel]
-loadCel buffer celName =
-  let (res, _) = runGet readData buffer in res where
+loadCel :: String -> ByteString -> Either String (Vector DecodedCel)
+loadCel celName buffer =
+  let (res, _) = runGet readData buffer in fmap fromList res where
   readData = do
     frameCount <- fmap fromIntegral getWord32le
     frameOffsets <- replicateM (frameCount + 1) (fmap fromIntegral getWord32le)
     let (_,_,headerSize) = celConfig celName
-    return $ fmap (decodeFrame . readFrame headerSize) $ zip3 [0..] frameOffsets (drop 1 frameOffsets)
+    return $ (decodeFrame . readFrame headerSize) <$> zip3 [0..] frameOffsets (drop 1 frameOffsets)
   readFrame :: Int -> (Int,Int,Int) -> (Int, ByteString)
   readFrame headerSize (frameNum, offsetA, offsetB) =
     let frameStart = offsetA + headerSize

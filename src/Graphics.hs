@@ -11,7 +11,7 @@ import Data.Vector (Vector, (!))
 import Data.ByteString (ByteString, pack)
 import qualified Data.Vector as V
 import Foreign.C.Types
-import Linear.Affine
+import Linear.Affine (Point(..))
 import Linear.V2
 import SDL hiding (copy)
 

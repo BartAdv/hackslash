@@ -12,7 +12,7 @@ import Test
 
 main :: IO ()
 main = do
-  test
-  -- g <- newStdGen
-  -- animate "Yamplo" 640 480 $
-  --   parseWinInput >>> (game g &&& handleExit)
+  g <- newStdGen
+  (window, renderer) <- initializeSDL
+  animate renderer $ parseWinInput >>> (game g &&& handleExit)
+  finalizeSDL (window, renderer)

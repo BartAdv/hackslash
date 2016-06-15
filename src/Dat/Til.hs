@@ -17,6 +17,6 @@ loadTil buffer =
   in fmap fromList res
   where
     readSquares = do
-      squares <- fmap fromList $ replicateM 4 (fmap fromIntegral getWord16le)
+      squares <- fromList <$> replicateM 4 (fmap fromIntegral getWord16le)
       empty <- isEmpty
       fmap (squares:) (if empty then return [] else readSquares)
