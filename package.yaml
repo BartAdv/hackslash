@@ -9,7 +9,9 @@ dependencies:
  - foreign-store
  - linear
  - random
+ - rapid
  - sdl2
+ - stm
  - text
  - unordered-containers
  - vector

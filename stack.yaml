@@ -13,6 +13,9 @@ packages:
     commit: 68e149c5b668b61e73c87725492879416c3aad7f
   extra-dep: true
 
+- location: /home/bart/sources/rapid
+  extra-dep: true
+
 extra-deps:
 - binary-strict-0.4.8.3
 

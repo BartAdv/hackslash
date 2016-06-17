@@ -17,6 +17,7 @@ import Linear.V4
 import           SDL                 (Renderer, ($=))
 import qualified SDL
 
+import Assets
 import Game
 import Graphics
 import Level
@@ -38,10 +39,10 @@ screenToIso origin coords = P (V2 ix iy)
         ix = (x / 32 + y / 16) / 2
         iy = (y / 16 - x / 32) / 2
 
-animate :: Renderer -> SF (Event SDL.EventPayload) (Game, Bool) -> IO ()
-animate renderer sf = do
+animate :: Assets -> Renderer -> SF (Event SDL.EventPayload) (Game, Bool) -> IO ()
+animate assets renderer sf = do
   lastInteraction <- newMVar =<< SDL.time
-  reactimate (return NoEvent) (senseInput lastInteraction) (renderOutput renderer) sf
+  reactimate (return NoEvent) (senseInput lastInteraction) renderOutput  sf
 
   where
     senseInput lastInteraction _canBlock = do
@@ -50,13 +51,19 @@ animate renderer sf = do
       mEvent <- SDL.pollEvent
       return (dt, Event . SDL.eventPayload <$> mEvent)
 
-    renderOutput renderer changed (gameState, shouldExit) = do
+    renderOutput changed (gameState, shouldExit) = do
       when changed $ do
-       SDL.clear renderer
-       --renderDisplay renderer textures digitsTextures (fromIntegral wh) gameState
-       --renderSounds audios gameState
-       SDL.present renderer
+        SDL.rendererDrawColor renderer $= backgroundColor
+        SDL.clear renderer
+        SDL.rendererDrawColor renderer $= V4 255 255 255 maxBound
+        SDL.drawLine renderer (P $ V2 0 0) (P $ V2 50 10)
+        --renderDisplay renderer textures digitsTextures (fromIntegral wh) gameState
+        --renderSounds audios gameState
+        SDL.present renderer
       return shouldExit
+
+    backgroundColor :: V4 Word8
+    backgroundColor = V4 12 42 100 maxBound
 
 
 initializeSDL :: IO (SDL.Window, SDL.Renderer)
@@ -66,9 +73,6 @@ initializeSDL = do
   window <- SDL.createWindow "yamplo" windowConf
   SDL.showWindow window
   renderer <- SDL.createRenderer window (-1) renderConf
-  SDL.rendererDrawColor renderer $= backgroundColor
-  SDL.clear renderer
-  SDL.present renderer
   return (window, renderer)
 
   where
@@ -81,9 +85,6 @@ initializeSDL = do
       { SDL.rendererType = SDL.AcceleratedVSyncRenderer
       , SDL.rendererTargetTexture = False
       }
-
-    backgroundColor :: V4 Word8
-    backgroundColor = V4 12 42 100 maxBound
 
 finalizeSDL :: (SDL.Window, SDL.Renderer) -> IO ()
 finalizeSDL (window, renderer) = do
