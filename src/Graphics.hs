@@ -29,7 +29,7 @@ framePixels palette DecodedCel{..} =
   in pack $ map snd $ concat $ reverse rows
   where
     getColors :: [CelColor] -> [Word8]
-    getColors = concat . fmap (maybe [0, 0, 0, 0] (\c -> let (r,g,b) = Pal.getColor palette c in [0xff, b, g, r]))
+    getColors = concatMap (maybe [0, 0, 0, 0] (\c -> let (r,g,b) = Pal.getColor palette c in [0xff, b, g, r]))
 
 data PillarTexture = PillarTexture
   { pillarTexture :: Texture
@@ -41,13 +41,13 @@ createPillarTexture :: Renderer
                     -> Pillar
                     -> IO PillarTexture
 createPillarTexture renderer palette cels pillar = do
-  let pillarBlocks = fmap fromJust $ V.filter isJust pillar
-      height = V.length pillarBlocks `div` 2 * 32
+  let pillarBlocks = fromJust <$> V.filter isJust pillar
+      height = max (V.length pillarBlocks `div` 2 * 32) 1 -- don't know why some pillars are empty, and 0 size is unacceptable
       width  = 64
-  tex <- createTexture renderer RGBA8888 TextureAccessStatic (fmap fromIntegral $ V2 width height)
+  tex <- createTexture renderer RGBA8888 TextureAccessStatic (fromIntegral <$> V2 width height)
   mapM_ (\(i, (frameNum, _)) -> do
             let cel = cels ! frameNum
                 (x,y) = (i `mod` 2 * 32, i `div` 2 * 32)
                 pixels = framePixels palette cel
             updateTexture tex (Just $ Rectangle (P (V2 x y)) (V2 32 32)) pixels (32 * 4)) $ zip [0..] (V.toList pillarBlocks)
-  return $ PillarTexture tex (fmap fromIntegral $ V2 width height)
+  return $ PillarTexture tex (fromIntegral <$> V2 width height)
