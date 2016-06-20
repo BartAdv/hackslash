@@ -25,7 +25,7 @@ import Graphics
 import Level
 
 drawingCoords :: [Point V2 Int]
-drawingCoords = [P (V2 x y) | y <- [1..30], x <- [1..30]]
+drawingCoords = [P (V2 x y) | y <- [1..40], x <- [1..30]]
 
 isoToScreen :: Num a => Point V2 a -> Point V2 a -> Point V2 a
 isoToScreen origin (P (V2 x y)) = origin + P (V2 ((x - y) * 32) ((x + y) * 16))

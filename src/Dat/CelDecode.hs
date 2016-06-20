@@ -8,22 +8,23 @@ import Data.Binary.Strict.Get
 import Data.List (foldl')
 
 import qualified Data.ByteString as BS
+import qualified Data.Vector as V
 
 -- palette idx, Nothing for transparent
 type CelColor = Maybe Word8
 
 data DecodedCel = DecodedCel { decodedCelWidth :: Int
                              , decodedCelHeight :: Int
-                             , decodedCelColors :: [CelColor] }
+                             , decodedCelColors :: Vector CelColor }
 
 type FrameDecoder = ByteString -> Int -> Int -> DecodedCel
 
 decodeFrameType0 :: FrameDecoder
-decodeFrameType0 frameData width height = DecodedCel width height colors
+decodeFrameType0 frameData width height = DecodedCel width height (V.fromList colors)
   where colors = Just <$> BS.unpack frameData
 
 decodeFrameType1 :: FrameDecoder
-decodeFrameType1 frameData width height = DecodedCel width height colors
+decodeFrameType1 frameData width height = DecodedCel width height (V.fromList colors)
   where
     colors = let (res, _) = runGet readColors frameData
              in either undefined id res
@@ -64,7 +65,7 @@ decodeFrameType5 =
 type TransparentLineDecoder = ByteString -> Int -> Int -> Int -> [CelColor]
 
 decodeFrameTypeHelper :: [Int] -> (Int -> Int) -> TransparentLineDecoder -> ByteString -> Int -> Int -> DecodedCel
-decodeFrameTypeHelper decodeCounts zeroCount decodeLine frameData width height = DecodedCel width height colors
+decodeFrameTypeHelper decodeCounts zeroCount decodeLine frameData width height = DecodedCel width height (V.fromList colors)
   where
     (_, _, colors) = foldl' decode (0 :: Int, 0, []) decodeCounts
     decode (i, offset, acc) decodeCount =

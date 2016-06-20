@@ -23,14 +23,11 @@ import Dat.Min
 framePixels :: Pal.Palette -> DecodedCel -> ByteString
 framePixels palette DecodedCel{..} =
   -- flip it vertically
-  let pitch = decodedCelWidth * 4
-      rows = groupBy
-               (\(i1,_) (i2,_) -> i1 `div` pitch == i2 `div` pitch)
-               (zip [0..] (getColors decodedCelColors))
-  in pack $ map snd $ concat $ reverse rows
+  let reversedRows = [decodedCelColors ! ((decodedCelHeight - y) * decodedCelHeight + (x-1))  | y <- [1..decodedCelHeight], x <- [1..decodedCelWidth]]
+  in pack $ concatMap getColor reversedRows
   where
-    getColors :: [CelColor] -> [Word8]
-    getColors = concatMap (maybe [0, 0, 0, 0] (\c -> let (r,g,b) = Pal.getColor palette c in [0xff, b, g, r]))
+    getColor :: CelColor -> [Word8]
+    getColor = (maybe [0, 0, 0, 0] (\c -> let (r,g,b) = Pal.getColor palette c in [0xff, b, g, r]))
 
 data PillarTexture = PillarTexture
   { pillarTexture :: Texture
