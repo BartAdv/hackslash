@@ -12,7 +12,7 @@ import Rendering
 update :: IO ()
 update = rapid 0 $ \r -> do
   g <- newStdGen
-  (_window, renderer) <- createRef r "resources" initializeSDL
+  (_window, renderer) <- createRef r "renderer" initializeSDL
   assets <- createRef r "assets" $ loadAssets renderer "diabdat/levels/towndata" "foo"
   restart r "loop" $
     animate assets renderer $ parseWinInput >>> (game g &&& handleExit)

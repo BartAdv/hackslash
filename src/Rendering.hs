@@ -24,25 +24,33 @@ import Game
 import Graphics
 import Level
 
-drawingCoords :: [Point V2 Int]
-drawingCoords = [P (V2 x y) | y <- [1..40], x <- [1..30]]
+drawingCoords :: Point V2 Int -> V2 Int -> [Point V2 Int]
+drawingCoords (P (V2 fromX fromY)) (V2 colCount rowCount) =
+  [P (V2 (fromX + x + y `div` 2) (fromY + y `div` 2 + y `mod` 2 - x)) | y <- [0..rowCount*2 - 1], x <- [0..colCount-1]]
 
-isoToScreen :: Num a => Point V2 a -> Point V2 a -> Point V2 a
-isoToScreen origin (P (V2 x y)) = origin + P (V2 ((x - y) * 32) ((x + y) * 16))
+isoToScreen :: Num a => Point V2 a -> Point V2 a -> Point V2 a -> Point V2 a
+isoToScreen offset cameraPos coords =
+  let (P (V2 x y)) = coords - cameraPos
+  in P (V2 ((x - y) * 32) ((x + y) * 16)) + offset
 
-screenToIso :: Fractional a => Point V2 a -> Point V2 a -> Point V2 a
-screenToIso origin coords = P (V2 ix iy)
-  where P (V2 x y) = coords - origin
-        ix = (x / 32 + y / 16) / 2
-        iy = (y / 16 - x / 32) / 2
+screenToIso offset cameraPos coords = P (V2 ix iy) + cameraPos
+  where
+    (P (V2 x y)) = coords - offset
+    ix = (x `div` 32 + y `div` 16) `div` 2
+    iy = (y `div` 16 - x `div` 32) `div` 2
+
+cameraPos = P (V2 12 29)
+drawArea = V2 20 30
+screenCenter = P (V2 512 384)
 
 renderLevel :: Renderer -> Level -> Point V2 Int -> IO ()
-renderLevel renderer Level{..} center =
-  forM_ drawingCoords $ \coord@(P (V2 x y)) ->
+renderLevel renderer Level{..} cameraPos =
+  forM_ (drawingCoords corner drawArea) $ \coord@(P (V2 x y)) ->
     let pillar = levelPillars ! (y * levelWidth + x)
-        screenCoords = fromIntegral <$> isoToScreen center coord
+        screenCoords = fromIntegral <$> isoToScreen screenCenter cameraPos coord
     in renderPillar screenCoords pillar
   where
+    corner = screenToIso screenCenter cameraPos (P (V2 0 0))
     renderPillar coords (Just PillarTexture{..}) = do
       let V2 _ h = pillarTextureSize
           offset = h - 32
@@ -53,26 +61,27 @@ renderLevel renderer Level{..} center =
 backgroundColor :: V4 Word8
 backgroundColor = V4 12 42 100 maxBound
 
-animate :: Assets -> Renderer -> SF (Event SDL.EventPayload) (Game, Bool) -> IO ()
-animate Assets{..} renderer sf = do
-  lastInteraction <- newMVar =<< SDL.time
-  reactimate (return NoEvent) (senseInput lastInteraction) renderOutput  sf
+renderGame renderer Assets{..} gameState = do
+  SDL.rendererDrawColor renderer $= backgroundColor
+  SDL.clear renderer
+  SDL.rendererDrawColor renderer $= V4 255 255 255 maxBound
+  renderLevel renderer assetsLevel cameraPos
+  SDL.present renderer
 
+animate :: Assets -> Renderer -> SF (Event SDL.EventPayload) (Game, Bool) -> IO ()
+animate assets renderer sf = do
+  lastInteraction <- newMVar =<< SDL.time
+  reactimate (return NoEvent) (senseInput lastInteraction) render sf
   where
+    render changed (gameState, shouldExit) = do
+      when changed $ renderGame renderer assets gameState
+      return shouldExit
+
     senseInput lastInteraction _canBlock = do
       currentTime <- SDL.time
       dt <- (currentTime -) <$> swapMVar lastInteraction currentTime
       mEvent <- SDL.pollEvent
       return (dt, Event . SDL.eventPayload <$> mEvent)
-
-    renderOutput changed (gameState, shouldExit) = do
-      when changed $ do
-        SDL.rendererDrawColor renderer $= backgroundColor
-        SDL.clear renderer
-        SDL.rendererDrawColor renderer $= V4 255 255 255 maxBound
-        renderLevel renderer assetsLevel (P $ V2 0 0)
-        SDL.present renderer
-      return shouldExit
 
 initializeSDL :: IO (SDL.Window, SDL.Renderer)
 initializeSDL = do
