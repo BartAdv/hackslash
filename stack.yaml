@@ -3,9 +3,9 @@ resolver: nightly-2016-06-15
 packages:
 - '.'
 
-- location: /home/bart/sources/sdl2
-    #git: https://github.com/haskell-game/sdl2
-    #commit: 472f3abe8a9a1e8970b19e9f91a65f6c62a8a97d
+- location:
+    git: https://github.com/haskell-game/sdl2
+    commit: e0812f7285ce33842fa9bccd9ea04d66590e8090
   extra-dep: true
 
 - location:

@@ -4,7 +4,7 @@ module Graphics
        (PillarTexture(..)
        ,createPillarTexture) where
 
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Data.List (groupBy)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Word (Word8)
@@ -14,7 +14,7 @@ import qualified Data.Vector as V
 import Foreign.C.Types
 import Linear.Affine (Point(..))
 import Linear.V2
-import SDL hiding (copy)
+import SDL hiding (Vector, copy)
 
 import Dat.Cel
 import qualified Dat.Pal as Pal
@@ -49,7 +49,7 @@ createPillarTexture renderer palette cels pillar = do
                 cel = cels ! frameNum
                 (x,y) = (i `mod` 2 * 32, i `div` 2 * 32)
                 pixels = framePixels palette cel
-            updateTexture tex (Just $ Rectangle (P (V2 x y)) (V2 32 32)) pixels (32 * 4)) $ zip [0..] pillarBlocks
+            void $ updateTexture tex (Just $ Rectangle (P (V2 x y)) (V2 32 32)) pixels (32 * 4)) $ zip [0..] pillarBlocks
   return $ PillarTexture tex (fromIntegral <$> V2 width height)
   where
     -- remove empty pairs of blocks to not waste texture space
