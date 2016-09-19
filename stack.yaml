@@ -1,4 +1,4 @@
-resolver: nightly-2016-06-15
+resolver: nightly-2016-09-17
 
 packages:
 - '.'
@@ -9,16 +9,18 @@ packages:
   extra-dep: true
 
 - location:
-    git: git@github.com:ivanperez-keera/Yampa.git
-    commit: 68e149c5b668b61e73c87725492879416c3aad7f
-  extra-dep: true
-
-- location: /home/bart/sources/rapid
+    git: https://github.com/reflex-frp/reflex
+    commit: a63aba90bdea5ae5b3e1506d468613bdfedcdfa3
   extra-dep: true
 
 extra-deps:
 - binary-strict-0.4.8.3
+- exception-transformers-0.4.0.4
+- haskell-src-exts-1.17.1
+- haskell-src-meta-0.6.0.14
+- rapid-0.1.2
+- ref-tf-0.4.0.1
 
 rebuild-ghc-options: true
 ghc-options:
-    yamplo: "-threaded -O2 -rtsopts -with-rtsopts=-N -Wall -lSDL2_image -lSDL2_mixer"
+    hackslash: "-threaded -O2 -rtsopts -with-rtsopts=-N -Wall -lSDL2_image -lSDL2_mixer"

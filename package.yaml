@@ -1,24 +1,26 @@
-name: yamplo
+name: hackslash
 
 dependencies:
  - base
  - binary
  - binary-strict
  - bytestring
+ - dependent-sum
  - filepath
  - foreign-store
  - linear
+ - mtl
  - random
  - rapid
+ - reflex
  - sdl2
  - stm
  - text
  - unordered-containers
  - vector
- - Yampa
 
 executables:
-  yamplo:
+  hackslash:
     main: Main.hs
     source-dirs:
       - src

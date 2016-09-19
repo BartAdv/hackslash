@@ -5,13 +5,12 @@
 module Rendering
        (initializeSDL
        ,finalizeSDL
-       ,animate) where
+       ,renderGame) where
 
 import Control.Monad
 import Control.Concurrent
 import Data.Word
 import Data.Vector ((!))
-import FRP.Yampa
 import Linear.Affine hiding (origin)
 import Linear.V2
 import Linear.V4
@@ -61,33 +60,19 @@ renderLevel renderer Level{..} cameraPos =
 backgroundColor :: V4 Word8
 backgroundColor = V4 12 42 100 maxBound
 
-renderGame renderer Assets{..} gameState = do
+renderGame :: Renderer -> Assets -> Game -> IO ()
+renderGame renderer Assets{..} _gameState = do
   SDL.rendererDrawColor renderer $= backgroundColor
   SDL.clear renderer
   SDL.rendererDrawColor renderer $= V4 255 255 255 maxBound
   renderLevel renderer assetsLevel cameraPos
   SDL.present renderer
 
-animate :: Assets -> Renderer -> SF (Event SDL.EventPayload) (Game, Bool) -> IO ()
-animate assets renderer sf = do
-  lastInteraction <- newMVar =<< SDL.time
-  reactimate (return NoEvent) (senseInput lastInteraction) render sf
-  where
-    render changed (gameState, shouldExit) = do
-      when changed $ renderGame renderer assets gameState
-      return shouldExit
-
-    senseInput lastInteraction _canBlock = do
-      currentTime <- SDL.time
-      dt <- (currentTime -) <$> swapMVar lastInteraction currentTime
-      mEvent <- SDL.pollEvent
-      return (dt, Event . SDL.eventPayload <$> mEvent)
-
 initializeSDL :: IO (SDL.Window, SDL.Renderer)
 initializeSDL = do
   SDL.initialize [SDL.InitVideo]
   SDL.HintRenderScaleQuality $= SDL.ScaleBest
-  window <- SDL.createWindow "yamplo" windowConf
+  window <- SDL.createWindow "hackslash" windowConf
   SDL.showWindow window
   renderer <- SDL.createRenderer window (-1) renderConf
   SDL.rendererDrawColor renderer $= backgroundColor
