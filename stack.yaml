@@ -13,6 +13,9 @@ packages:
     commit: a63aba90bdea5ae5b3e1506d468613bdfedcdfa3
   extra-dep: true
 
+- location: ../reflex-sdl2
+  extra-dep: true
+
 extra-deps:
 - binary-strict-0.4.8.3
 - exception-transformers-0.4.0.4

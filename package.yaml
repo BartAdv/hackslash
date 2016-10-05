@@ -13,6 +13,7 @@ dependencies:
  - random
  - rapid
  - reflex
+ - reflex-sdl2
  - sdl2
  - stm
  - text

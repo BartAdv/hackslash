@@ -8,7 +8,6 @@ module Rendering
        ,renderGame) where
 
 import Control.Monad
-import Control.Concurrent
 import Data.Word
 import Data.Vector ((!))
 import Linear.Affine hiding (origin)
@@ -19,9 +18,9 @@ import SDL                 (Renderer, ($=))
 import qualified SDL
 
 import Assets
-import Game
 import Graphics
 import Level
+import Types
 
 drawingCoords :: Point V2 Int -> V2 Int -> [Point V2 Int]
 drawingCoords (P (V2 fromX fromY)) (V2 colCount rowCount) =
