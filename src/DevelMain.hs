@@ -12,4 +12,4 @@ update = rapid 0 $ \r -> do
   (_window, renderer) <- createRef r "renderer" initializeSDL
   assets <- createRef r "assets" $ loadAssets renderer "diabdat/levels/towndata" "foo"
   restart r "loop" $
-    sdlHost renderer (Just 60) (game assets)
+    sdlHost (Just 60) (game renderer assets)

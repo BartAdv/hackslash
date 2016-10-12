@@ -11,5 +11,5 @@ main :: IO ()
 main = do
   (window, renderer) <- initializeSDL
   assets <- loadAssets renderer "diabdat/levels/towndata" "foo"
-  sdlHost renderer (Just 60) (game assets)
+  sdlHost (Just 60) (game renderer assets)
   finalizeSDL (window, renderer)

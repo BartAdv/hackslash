@@ -22,6 +22,10 @@ import Graphics
 import Level
 import Types
 
+type Sprite = Int
+
+data Rendering = Rendering {foobar::Int}
+
 drawingCoords :: Point V2 Int -> V2 Int -> [Point V2 Int]
 drawingCoords (P (V2 fromX fromY)) (V2 colCount rowCount) =
   [P (V2 (fromX + x + y `div` 2) (fromY + y `div` 2 + y `mod` 2 - x)) | y <- [0..rowCount*2 - 1], x <- [0..colCount-1]]
@@ -31,14 +35,16 @@ isoToScreen offset cameraPos coords =
   let (P (V2 x y)) = coords - cameraPos
   in P (V2 ((x - y) * 32) ((x + y) * 16)) + offset
 
+screenToIso :: Integral a => Point V2 a -> Point V2 a -> Point V2 a -> Point V2 a
 screenToIso offset cameraPos coords = P (V2 ix iy) + cameraPos
   where
     (P (V2 x y)) = coords - offset
     ix = (x `div` 32 + y `div` 16) `div` 2
     iy = (y `div` 16 - x `div` 32) `div` 2
 
-cameraPos = P (V2 12 29)
+drawArea :: V2 Int
 drawArea = V2 20 30
+screenCenter :: Point V2 Int
 screenCenter = P (V2 512 384)
 
 renderLevel :: Renderer -> Level -> Point V2 Int -> IO ()
@@ -59,8 +65,8 @@ renderLevel renderer Level{..} cameraPos =
 backgroundColor :: V4 Word8
 backgroundColor = V4 12 42 100 maxBound
 
-renderGame :: Renderer -> Assets -> Game -> IO ()
-renderGame renderer Assets{..} _gameState = do
+renderGame :: Renderer -> Assets -> Coord -> IO ()
+renderGame renderer Assets{..} cameraPos = do
   SDL.rendererDrawColor renderer $= backgroundColor
   SDL.clear renderer
   SDL.rendererDrawColor renderer $= V4 255 255 255 maxBound

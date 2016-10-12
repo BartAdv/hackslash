@@ -13,7 +13,9 @@ packages:
     commit: a63aba90bdea5ae5b3e1506d468613bdfedcdfa3
   extra-dep: true
 
-- location: ../reflex-sdl2
+- location:
+    git: https://github.com/dalaing/reflex-sdl2
+    commit: a98f0f154c2159f5170b0c280d09762f2b6b2a2a
   extra-dep: true
 
 extra-deps:
