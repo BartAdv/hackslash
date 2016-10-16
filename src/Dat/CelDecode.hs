@@ -1,6 +1,6 @@
 -- https://github.com/doggan/diablo-file-formats
 
-module Dat.CelDecode (DecodedCel(..), CelColor, getCelFrameDecoder) where
+module Dat.CelDecode (DecodedCel(..), CelColor, getCelFrameDecoder, decodeFrameType6) where
 
 import Control.Monad (replicateM)
 import Dat.Utils
@@ -10,12 +10,15 @@ import Data.List (foldl')
 import qualified Data.ByteString as BS
 import qualified Data.Vector as V
 
+import Debug.Trace
+
 -- palette idx, Nothing for transparent
 type CelColor = Maybe Word8
 
 data DecodedCel = DecodedCel { decodedCelWidth :: Int
                              , decodedCelHeight :: Int
                              , decodedCelColors :: Vector CelColor }
+                  deriving Show
 
 type FrameDecoder = ByteString -> Int -> Int -> DecodedCel
 
@@ -24,10 +27,11 @@ decodeFrameType0 frameData width height = DecodedCel width height (V.fromList co
   where colors = Just <$> BS.unpack frameData
 
 decodeFrameType1 :: FrameDecoder
-decodeFrameType1 frameData width height = DecodedCel width height (V.fromList colors)
+decodeFrameType1 frameData width height =
+    let (res, _) = runGet readColors frameData
+        (Right colors) = res
+    in DecodedCel width height (V.fromList colors)
   where
-    colors = let (res, _) = runGet readColors frameData
-             in either undefined id res
     readColors :: Get [CelColor]
     readColors = do
       chunkSize <- fmap fromIntegral getWord8
@@ -90,26 +94,28 @@ decodeLineTransparencyRight frameData frameReadOffset decodeCount zeroCount =
     implicitTransparentPixels = replicate (32 - decodeCount) Nothing
     getColor i = Just $ index frameData (frameReadOffset + i)
 
--- decodeFrameType6 :: FrameDecoder
--- decodeFrameType6 frameData width height = DecodedCel width height (fromList colors)
---   where
---     colors = let (res, _) = runGet (skip headerSizeSkip >>= \_ -> readColors) frameData
---              in either undefined id res
---     headerSizeSkip = 10
---     readColors :: Get [CelColor]
---     readColors = do
---       chunkSize <- getWord8
---       chunk <- if chunkSize > 65 && chunkSize < 128
---                then do
---                  col <- getColor
---                  return $ fmap (const col) [1..chunkSize]
---                else mapM (if chunkSize < 128
---                      then (const $ return transparent)
---                      else const getColor) [1..chunkSize]
---       fmap (chunk ++) readColors
---     getColor = do
---       idx <- getWord8
---       return $ extendColor $ Pal.getColor idx
+decodeFrameType6 :: FrameDecoder
+decodeFrameType6 frameData width height =
+  let (res, _) = runGet readColors frameData
+      (Right colors) = res
+  in DecodedCel width height (V.fromList colors)
+  where
+    readColors :: Get [CelColor]
+    readColors = do
+      chunkSize <- getWord8
+      chunk <- trace (show chunkSize) $ if chunkSize >= 128 then
+                 let chunkSize' = 256 - chunkSize
+                 in if chunkSize' <= 65 then
+                      replicateM (fromIntegral chunkSize') getColor
+                    else do
+                      col <- getColor
+                      return $ map (const col) [1..chunkSize' - 65]
+               else mapM (const $ return Nothing) [1..chunkSize]
+      empty <- isEmpty
+      fmap (chunk ++) (if empty then return [] else readColors)
+    getColor = do
+      idx <- fmap fromIntegral getWord8
+      return $ Just $ index frameData idx
 
 -- Returns true if the image is a plain 32x32.
 isType0 :: String -> Int -> Bool
