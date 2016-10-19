@@ -10,6 +10,6 @@ import SDLEventLoop
 update :: IO ()
 update = rapid 0 $ \r -> do
   (_window, renderer) <- createRef r "renderer" initializeSDL
-  assets <- createRef r "assets" $ loadAssets renderer "diabdat/levels/towndata" "foo"
+  assets <- createRef r "assets" $ loadAssets "diabdat" renderer "foo"
   restart r "loop" $
     sdlHost (Just 60) (game renderer assets)

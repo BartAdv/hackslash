@@ -102,20 +102,18 @@ decodeFrameType6 frameData width height =
   where
     readColors :: Get [CelColor]
     readColors = do
-      chunkSize <- getWord8
-      chunk <- trace (show chunkSize) $ if chunkSize >= 128 then
+      chunkSize <- fmap fromIntegral getWord8
+      chunk <- if chunkSize >= 128 then
                  let chunkSize' = 256 - chunkSize
                  in if chunkSize' <= 65 then
-                      replicateM (fromIntegral chunkSize') getColor
+                      replicateM chunkSize' getColor
                     else do
                       col <- getColor
-                      return $ map (const col) [1..chunkSize' - 65]
-               else mapM (const $ return Nothing) [1..chunkSize]
+                      replicateM (chunkSize' - 65) (return col)
+               else replicateM chunkSize (return Nothing)
       empty <- isEmpty
       fmap (chunk ++) (if empty then return [] else readColors)
-    getColor = do
-      idx <- fmap fromIntegral getWord8
-      return $ Just $ index frameData idx
+    getColor = fmap Just getWord8
 
 -- Returns true if the image is a plain 32x32.
 isType0 :: String -> Int -> Bool

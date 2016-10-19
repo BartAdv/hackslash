@@ -21,8 +21,8 @@ data Level = Level { levelWidth :: Int
                    , levelPillars :: Vector (Maybe PillarTexture)
                    , levelPillarHeight :: Int}
 
-loadTown :: Renderer -> FilePath -> IO Level
-loadTown renderer path = do
+loadTown :: FilePath -> Renderer -> IO Level
+loadTown datpath renderer = do
   Right pils <- BS.readFile (path </> "town.min") >>= return . loadMin "town"
   Right tils <- BS.readFile (path </> "town.til") >>= return . loadTil
   Right sector1s <- readSector tils pils "sector1s"
@@ -40,6 +40,7 @@ loadTown renderer path = do
   let pillarHeight = getBlockCountPerPillar "town" `div` 2
   return $ Level w h (fromList pillarTextures) pillarHeight
   where
+    path = datpath </> "levels/towndata"
     fromSectors sectors coords =
       let Just Dun{..} = find (inSector coords) sectors
           (P (V2 levelX levelY)) = coords - dunStartCoords

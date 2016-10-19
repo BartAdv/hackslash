@@ -2,32 +2,26 @@
 {-# LANGUAGE OverloadedLists #-}
 module Graphics
        (PillarTexture(..)
-       ,createPillarTexture) where
+       ,createPillarTexture
+       ,createCl2Texture) where
 
 import Control.Monad (when, void)
-import Data.List (groupBy)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Word (Word8)
 import Data.Vector (Vector, (!))
-import Data.ByteString (ByteString, pack)
 import qualified Data.Vector as V
+import Data.ByteString (ByteString, pack)
+import qualified Data.ByteString as BS
 import Foreign.C.Types
 import Linear.Affine (Point(..))
 import Linear.V2
-import SDL hiding (Vector, copy)
+import SDL hiding (Vector, copy, trace)
 
 import Dat.Cel
 import qualified Dat.Pal as Pal
 import Dat.Min
 
-framePixels :: Pal.Palette -> DecodedCel -> ByteString
-framePixels palette DecodedCel{..} =
-  -- flip it vertically
-  let reversedRows = [decodedCelColors ! ((decodedCelHeight - y) * decodedCelHeight + (x-1))  | y <- [1..decodedCelHeight], x <- [1..decodedCelWidth]]
-  in pack $ concatMap getColor reversedRows
-  where
-    getColor :: CelColor -> [Word8]
-    getColor = (maybe [0, 0, 0, 0] (\c -> let (r,g,b) = Pal.getColor palette c in [0xff, b, g, r]))
+import Debug.Trace
 
 data PillarTexture = PillarTexture
   { pillarTexture :: Texture
@@ -55,3 +49,29 @@ createPillarTexture renderer palette cels pillar = do
     -- remove empty pairs of blocks to not waste texture space
     removeEmpty (Nothing:Nothing:bs) = removeEmpty bs
     removeEmpty bs = bs
+
+createCl2Texture :: Renderer
+                 -> Pal.Palette
+                 -> Vector DecodedCel
+                 -> IO Texture
+createCl2Texture _ _ [] = error "No frames"
+createCl2Texture renderer palette cels = do
+  let frameCount = V.length cels
+      DecodedCel fw fh _ = V.head cels
+      tw = frameCount * fw
+      th = fh
+  tex <- createTexture renderer RGBA8888 TextureAccessStatic (fromIntegral <$> V2 tw th)
+  SDL.textureBlendMode tex $= SDL.BlendAlphaBlend
+  mapM_ (\(i, cel) -> do
+            let (x, y) = (i * fw, 0)
+                pixels = framePixels palette cel
+            void $ updateTexture tex (Just $ fromIntegral <$> Rectangle (P (V2 x y)) (V2 fw fh)) pixels (fromIntegral fw * 4)) $ zip [0..] (V.toList cels)
+  return tex
+
+framePixels :: Pal.Palette -> DecodedCel -> ByteString
+framePixels palette (DecodedCel w h colors) =
+  let reverseScanlines = [colors ! ((h - y) * h + (x-1)) | y <- [1..h], x <- [1..w]]
+  in pack $ concatMap getColor reverseScanlines
+  where
+    getColor :: CelColor -> [Word8]
+    getColor = maybe [0, 0, 0, 0] (\c -> let (r,g,b) = Pal.getColor palette c in [0xff, b, g, r])

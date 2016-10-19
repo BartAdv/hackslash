@@ -6,6 +6,7 @@
 
 module Test where
 
+import Control.Monad
 import qualified Data.ByteString as BS
 import Data.Word (Word8)
 import qualified Data.Vector as V
@@ -18,15 +19,19 @@ import System.FilePath.Posix ((</>))
 import Assets
 import Dat.Cel
 import qualified Dat.Pal as Pal
+import Graphics
 import Rendering
 
 path :: FilePath
-path = "diabdat/plrgfx/warrior"
-
+path = "diabdat"
 
 test :: IO ()
 test = do
-  buffer <- BS.readFile (path </> "wha/whaas.cl2")
-  case loadCl2 "whaas" buffer of
-    Left msg -> putStrLn msg
-    Right cels -> print $ V.head cels
+  (window, renderer) <- initializeSDL
+  tex <- loadAnimation (path </> "plrgfx/warrior/wha/whaas.cl2") renderer
+  SDL.clear renderer
+  SDL.copy renderer tex (Just $ SDL.Rectangle (P (V2 0 0)) (V2 96 96)) (Just $ SDL.Rectangle (P (V2 0 0)) (V2 96 96))
+  SDL.present renderer
+  _ <- getLine
+  finalizeSDL (window, renderer)
+  return ()

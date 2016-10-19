@@ -50,10 +50,10 @@ readFrames :: Int -> ByteString -> Get [(Int, ByteString)]
 readFrames headerSize buffer = do
   frameCount <- fmap fromIntegral getWord32le
   frameOffsets <- replicateM (frameCount + 1) (fmap fromIntegral getWord32le)
-  return $ (readFrame headerSize) <$> zip3 [0..] frameOffsets (drop 1 frameOffsets)
+  return $ readFrame <$> zip3 [0..] frameOffsets (drop 1 frameOffsets)
    where
-     readFrame :: Int -> (Int,Int,Int) -> (Int, ByteString)
-     readFrame headerSize (frameNum, offsetA, offsetB) =
+     readFrame :: (Int,Int,Int) -> (Int, ByteString)
+     readFrame (frameNum, offsetA, offsetB) =
        let frameStart = offsetA + headerSize
            frameEnd = offsetB
            frameSize = frameEnd - frameStart
