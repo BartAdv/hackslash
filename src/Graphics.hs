@@ -1,17 +1,15 @@
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedLists #-}
 module Graphics
        (PillarTexture(..)
        ,createPillarTexture
        ,createCl2Texture) where
 
-import Control.Monad (when, void)
-import Data.Maybe (isJust, isNothing, fromJust)
+import Control.Monad (when, void, forM_)
+import Data.Maybe (isJust)
 import Data.Word (Word8)
 import Data.Vector (Vector, (!))
 import qualified Data.Vector as V
 import Data.ByteString (ByteString, pack)
-import qualified Data.ByteString as BS
 import Foreign.C.Types
 import Linear.Affine (Point(..))
 import Linear.V2
@@ -20,8 +18,6 @@ import SDL hiding (Vector, copy, trace)
 import Dat.Cel
 import qualified Dat.Pal as Pal
 import Dat.Min
-
-import Debug.Trace
 
 data PillarTexture = PillarTexture
   { pillarTexture :: Texture
@@ -38,12 +34,13 @@ createPillarTexture renderer palette cels pillar = do
       width  = 64
   tex <- createTexture renderer RGBA8888 TextureAccessStatic (fromIntegral <$> V2 width height)
   SDL.textureBlendMode tex $= SDL.BlendAlphaBlend
-  mapM_ (\(i, pillarBlock) -> when (isJust pillarBlock) $ do
-            let Just (frameNum, _) = pillarBlock
-                cel = cels ! frameNum
-                (x,y) = (i `mod` 2 * 32, i `div` 2 * 32)
-                pixels = framePixels palette cel
-            void $ updateTexture tex (Just $ Rectangle (P (V2 x y)) (V2 32 32)) pixels (32 * 4)) $ zip [0..] pillarBlocks
+  forM_ (zip [0..] pillarBlocks) $ \(i, pillarBlock) ->
+    when (isJust pillarBlock) $ do
+      let Just (frameNum, _) = pillarBlock
+          cel = cels ! frameNum
+          (x,y) = (i `mod` 2 * 32, i `div` 2 * 32)
+          pixels = framePixels palette cel
+      void $ updateTexture tex (Just $ Rectangle (P (V2 x y)) (V2 32 32)) pixels (32 * 4)
   return $ PillarTexture tex (fromIntegral <$> V2 width height)
   where
     -- remove empty pairs of blocks to not waste texture space
@@ -62,15 +59,15 @@ createCl2Texture renderer palette cels = do
       th = fh
   tex <- createTexture renderer RGBA8888 TextureAccessStatic (fromIntegral <$> V2 tw th)
   SDL.textureBlendMode tex $= SDL.BlendAlphaBlend
-  mapM_ (\(i, cel) -> do
-            let (x, y) = (i * fw, 0)
-                pixels = framePixels palette cel
-            void $ updateTexture tex (Just $ fromIntegral <$> Rectangle (P (V2 x y)) (V2 fw fh)) pixels (fromIntegral fw * 4)) $ zip [0..] (V.toList cels)
+  forM_ (zip [0..] $ V.toList cels) $ \(i, cel) -> do
+    let (x, y) = (i * fw, 0)
+        pixels = framePixels palette cel
+    void $ updateTexture tex (Just $ fromIntegral <$> Rectangle (P (V2 x y)) (V2 fw fh)) pixels (fromIntegral fw * 4)
   return tex
 
 framePixels :: Pal.Palette -> DecodedCel -> ByteString
-framePixels palette (DecodedCel w h colors) =
-  let reverseScanlines = [colors ! ((h - y) * h + (x-1)) | y <- [1..h], x <- [1..w]]
+framePixels palette cel@(DecodedCel w h _) =
+  let reverseScanlines = [celPixel cel (x-1, h-y) | y <- [1..h], x <- [1..w]]
   in pack $ concatMap getColor reverseScanlines
   where
     getColor :: CelColor -> [Word8]

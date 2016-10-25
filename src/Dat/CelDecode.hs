@@ -1,6 +1,7 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 -- https://github.com/doggan/diablo-file-formats
 
-module Dat.CelDecode (DecodedCel(..), CelColor, getCelFrameDecoder, decodeFrameType6) where
+module Dat.CelDecode (DecodedCel(..), CelColor, celPixel, getCelFrameDecoder, decodeFrameType6) where
 
 import Control.Monad (replicateM)
 import Dat.Utils
@@ -15,22 +16,28 @@ import Debug.Trace
 -- palette idx, Nothing for transparent
 type CelColor = Maybe Word8
 
+newtype CelBitmap = CelBitmap (Vector CelColor)
+
+mkCelBitmap = CelBitmap . V.fromList
+
+celPixel :: DecodedCel -> (Int, Int) -> CelColor
+celPixel (DecodedCel _ h (CelBitmap colors)) (x, y) = colors V.! (y * h + x)
+
 data DecodedCel = DecodedCel { decodedCelWidth :: Int
                              , decodedCelHeight :: Int
-                             , decodedCelColors :: Vector CelColor }
-                  deriving Show
+                             , decodedCelColors :: CelBitmap }
 
 type FrameDecoder = ByteString -> Int -> Int -> DecodedCel
 
 decodeFrameType0 :: FrameDecoder
-decodeFrameType0 frameData width height = DecodedCel width height (V.fromList colors)
-  where colors = Just <$> BS.unpack frameData
+decodeFrameType0 frameData width height = DecodedCel width height colors
+  where colors = mkCelBitmap $ Just <$> BS.unpack frameData
 
 decodeFrameType1 :: FrameDecoder
 decodeFrameType1 frameData width height =
     let (res, _) = runGet readColors frameData
         (Right colors) = res
-    in DecodedCel width height (V.fromList colors)
+    in DecodedCel width height (mkCelBitmap colors)
   where
     readColors :: Get [CelColor]
     readColors = do
@@ -69,7 +76,7 @@ decodeFrameType5 =
 type TransparentLineDecoder = ByteString -> Int -> Int -> Int -> [CelColor]
 
 decodeFrameTypeHelper :: [Int] -> (Int -> Int) -> TransparentLineDecoder -> ByteString -> Int -> Int -> DecodedCel
-decodeFrameTypeHelper decodeCounts zeroCount decodeLine frameData width height = DecodedCel width height (V.fromList colors)
+decodeFrameTypeHelper decodeCounts zeroCount decodeLine frameData width height = DecodedCel width height (mkCelBitmap colors)
   where
     (_, _, colors) = foldl' decode (0 :: Int, 0, []) decodeCounts
     decode (i, offset, acc) decodeCount =
@@ -98,7 +105,7 @@ decodeFrameType6 :: FrameDecoder
 decodeFrameType6 frameData width height =
   let (res, _) = runGet readColors frameData
       (Right colors) = res
-  in DecodedCel width height (V.fromList colors)
+  in DecodedCel width height (mkCelBitmap colors)
   where
     readColors :: Get [CelColor]
     readColors = do

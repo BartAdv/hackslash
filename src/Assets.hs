@@ -25,6 +25,6 @@ loadAnimation filePath renderer = do
 loadAssets :: FilePath -> Renderer -> String -> IO Assets
 loadAssets path renderer levelName = do
   level <- loadTown path renderer -- yeah, I know
-  test <- loadAnimation path renderer
+  test <- loadAnimation (path </> "plrgfx/warrior/wha/whaas.cl2") renderer
   return $ Assets level undefined
 
