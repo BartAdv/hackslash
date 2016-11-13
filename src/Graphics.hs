@@ -1,8 +1,9 @@
 {-# LANGUAGE OverloadedLists #-}
 module Graphics
        (PillarTexture(..)
+       ,Cl2Anim(..)
        ,createPillarTexture
-       ,createCl2Texture) where
+       ,createCl2Anim) where
 
 import Control.Monad (when, void, forM_)
 import Data.Maybe (isJust)
@@ -47,12 +48,17 @@ createPillarTexture renderer palette cels pillar = do
     removeEmpty (Nothing:Nothing:bs) = removeEmpty bs
     removeEmpty bs = bs
 
-createCl2Texture :: Renderer
-                 -> Pal.Palette
-                 -> Vector DecodedCel
-                 -> IO Texture
-createCl2Texture _ _ [] = error "No frames"
-createCl2Texture renderer palette cels = do
+data Cl2Anim = Cl2Anim
+  { cl2AnimTexture :: Texture
+  , cl2AnimFrameCount :: Int
+  , cl2AnimFrameSize :: V2 CInt }
+
+createCl2Anim :: Renderer
+              -> Pal.Palette
+              -> Vector DecodedCel
+              -> IO Cl2Anim
+createCl2Anim _ _ [] = error "No frames"
+createCl2Anim renderer palette cels = do
   let frameCount = V.length cels
       DecodedCel fw fh _ = V.head cels
       tw = frameCount * fw
@@ -63,7 +69,7 @@ createCl2Texture renderer palette cels = do
     let (x, y) = (i * fw, 0)
         pixels = framePixels palette cel
     void $ updateTexture tex (Just $ fromIntegral <$> Rectangle (P (V2 x y)) (V2 fw fh)) pixels (fromIntegral fw * 4)
-  return tex
+  return $ Cl2Anim tex (V.length cels) (fromIntegral <$> V2 fw fh)
 
 framePixels :: Pal.Palette -> DecodedCel -> ByteString
 framePixels palette cel@(DecodedCel w h _) =

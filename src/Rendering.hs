@@ -5,7 +5,10 @@
 module Rendering
        (initializeSDL
        ,finalizeSDL
-       ,renderGame) where
+       ,renderLevel
+       ,renderAnimation
+       ,clearFrame
+       ,showFrame) where
 
 import Control.Monad
 import Data.Word
@@ -17,16 +20,11 @@ import SDL                 (Renderer, ($=))
 
 import qualified SDL
 
-import Assets
 import Graphics
 import Level
 import Types
 
-type Sprite = Int
-
-data Rendering = Rendering {foobar::Int}
-
-drawingCoords :: Point V2 Int -> V2 Int -> [Point V2 Int]
+drawingCoords :: Coord -> V2 Int -> [Point V2 Int]
 drawingCoords (P (V2 fromX fromY)) (V2 colCount rowCount) =
   [P (V2 (fromX + x + y `div` 2) (fromY + y `div` 2 + y `mod` 2 - x)) | y <- [0..rowCount*2 - 1], x <- [0..colCount-1]]
 
@@ -44,10 +42,19 @@ screenToIso offset cameraPos coords = P (V2 ix iy) + cameraPos
 
 drawArea :: V2 Int
 drawArea = V2 20 30
-screenCenter :: Point V2 Int
+screenCenter :: Coord
 screenCenter = P (V2 512 384)
 
-renderLevel :: Renderer -> Level -> Point V2 Int -> IO ()
+renderAnimation :: Renderer -> Cl2Anim -> Coord -> Int -> IO ()
+renderAnimation renderer anim coords frameNum =
+  SDL.copy renderer animationTexture src dest
+  where
+    src = Just $ SDL.Rectangle (P (V2 (fromIntegral frameNum' * frameWidth) 0)) frameSize
+    dest = Just $ SDL.Rectangle (fromIntegral <$> coords) frameSize
+    frameNum' = frameNum `mod` frameCount
+    Cl2Anim animationTexture frameCount frameSize@(V2 frameWidth _) = anim
+
+renderLevel :: Renderer -> Level -> Coord -> IO ()
 renderLevel renderer Level{..} cameraPos =
   forM_ (drawingCoords corner drawArea) $ \coord@(P (V2 x y)) ->
     let pillar = levelPillars ! (y * levelWidth + x)
@@ -65,13 +72,14 @@ renderLevel renderer Level{..} cameraPos =
 backgroundColor :: V4 Word8
 backgroundColor = V4 12 42 100 maxBound
 
-renderGame :: Renderer -> Assets -> Coord -> IO ()
-renderGame renderer Assets{..} cameraPos = do
+clearFrame :: Renderer -> IO ()
+clearFrame renderer = do
   SDL.rendererDrawColor renderer $= backgroundColor
   SDL.clear renderer
   SDL.rendererDrawColor renderer $= V4 255 255 255 maxBound
-  renderLevel renderer assetsLevel cameraPos
-  SDL.present renderer
+
+showFrame :: Renderer -> IO ()
+showFrame = SDL.present
 
 initializeSDL :: IO (SDL.Window, SDL.Renderer)
 initializeSDL = do

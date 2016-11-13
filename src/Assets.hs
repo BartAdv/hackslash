@@ -1,5 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
-module Assets (Assets(..), loadAssets, loadAnimation) where
+module Assets ( Assets(..)
+              , loadAssets
+              , loadAnimation) where
 
 import qualified Data.ByteString as BS
 import SDL (Renderer, Texture)
@@ -11,20 +13,19 @@ import Level
 
 data Assets = Assets
   { assetsLevel :: Level
-  , assetsTest :: Texture
+  , assetsTest :: Cl2Anim
   }
 
-loadAnimation :: FilePath -> Renderer -> IO Texture
-loadAnimation filePath renderer = do
+loadAnimation :: FilePath -> Palette -> Renderer -> IO Cl2Anim
+loadAnimation filePath pal renderer = do
   buffer <- BS.readFile filePath
-  pal <- BS.readFile "diabdat/levels/towndata/town.pal"
   case loadCl2 "whaas" buffer of
     Left msg -> error msg
-    Right cels -> createCl2Texture renderer pal cels
+    Right cels -> createCl2Anim renderer pal cels
 
 loadAssets :: FilePath -> Renderer -> String -> IO Assets
 loadAssets path renderer levelName = do
+  pal <- BS.readFile "diabdat/levels/towndata/town.pal"
   level <- loadTown path renderer -- yeah, I know
-  test <- loadAnimation (path </> "plrgfx/warrior/wha/whaas.cl2") renderer
-  return $ Assets level undefined
-
+  test <- loadAnimation (path </> "plrgfx/warrior/wha/whaas.cl2") pal renderer
+  return $ Assets level test

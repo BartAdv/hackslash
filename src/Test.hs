@@ -28,9 +28,10 @@ path = "diabdat"
 test :: IO ()
 test = do
   (window, renderer) <- initializeSDL
-  tex <- loadAnimation (path </> "plrgfx/warrior/wha/whaas.cl2") renderer
+  pal <- BS.readFile "diabdat/levels/towndata/town.pal"
+  anim <- loadAnimation (path </> "plrgfx/warrior/wha/whaas.cl2") pal renderer
   SDL.clear renderer
-  SDL.copy renderer tex (Just $ SDL.Rectangle (P (V2 0 0)) (V2 96 96)) (Just $ SDL.Rectangle (P (V2 0 0)) (V2 96 96))
+  renderAnimation renderer anim (P (V2 50 50)) 88
   SDL.present renderer
   _ <- getLine
   finalizeSDL (window, renderer)
