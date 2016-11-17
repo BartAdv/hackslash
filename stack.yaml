@@ -3,9 +3,9 @@ resolver: nightly-2016-09-17
 packages:
 - '.'
 
-- location:
-    git: https://github.com/haskell-game/sdl2
-    commit: e0812f7285ce33842fa9bccd9ea04d66590e8090
+- location: /home/bart/sources/sdl2
+    # git: https://github.com/haskell-game/sdl2
+    # commit: e0812f7285ce33842fa9bccd9ea04d66590e8090
   extra-dep: true
 
 - location:
@@ -26,6 +26,5 @@ extra-deps:
 - rapid-0.1.2
 - ref-tf-0.4.0.1
 
-rebuild-ghc-options: true
 ghc-options:
-    hackslash: "-threaded -O2 -rtsopts -with-rtsopts=-N -Wall -lSDL2_image -lSDL2_mixer"
+  hackslash: "-fPIC -fobject-code"

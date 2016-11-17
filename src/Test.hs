@@ -25,14 +25,5 @@ import Rendering
 path :: FilePath
 path = "diabdat"
 
+
 test :: IO ()
-test = do
-  (window, renderer) <- initializeSDL
-  pal <- BS.readFile "diabdat/levels/towndata/town.pal"
-  anim <- loadAnimation (path </> "plrgfx/warrior/wha/whaas.cl2") pal renderer
-  SDL.clear renderer
-  renderAnimation renderer anim (P (V2 50 50)) 88
-  SDL.present renderer
-  _ <- getLine
-  finalizeSDL (window, renderer)
-  return ()

@@ -2,14 +2,14 @@ module DevelMain (update) where
 
 import Rapid
 
+import Freeablo
 import Game
-import Assets
-import Rendering
 import SDLEventLoop
 
 update :: IO ()
 update = rapid 0 $ \r -> do
-  (_window, renderer) <- createRef r "renderer" initializeSDL
-  assets <- createRef r "assets" $ loadAssets "diabdat" renderer "foo"
+  initFAIO
+  renderer <- createRef r "renderer" $ createRenderer 1200 1080 False
+  town <- createRef r "town" createTownLevel
   restart r "loop" $
-    sdlHost (Just ticksPerSecond) (game renderer assets)
+    sdlHost (Just ticksPerSecond) (game renderer town)

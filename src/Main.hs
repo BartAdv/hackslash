@@ -2,14 +2,15 @@
 
 module Main (main) where
 
-import Assets
+import Freeablo
 import Game
-import Rendering
+import Types
 import SDLEventLoop
 
 main :: IO ()
 main = do
-  (window, renderer) <- initializeSDL
-  assets <- loadAssets "diabdat" renderer "foo"
-  sdlHost (Just 60) (game renderer assets)
-  finalizeSDL (window, renderer)
+  initFAIO
+  renderer <- createRenderer 1200 1080 False
+  town <- createTownLevel
+  sdlHost (Just ticksPerSecond) (game renderer town)
+  -- finalize

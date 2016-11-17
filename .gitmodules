@@ -1,0 +1,3 @@
+[submodule "freeablo"]
+	path = freeablo
+	url = git@github.com:BartAdv/freeablo
