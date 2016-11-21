@@ -2,23 +2,13 @@ name: hackslash
 
 dependencies:
  - base
- - binary
- - binary-strict
- - bytestring
- - dependent-sum
- - filepath
  - foreign-store
  - linear
  - mtl
- - random
  - rapid
  - reflex
  - reflex-sdl2
  - sdl2
- - stm
- - text
- - unordered-containers
- - vector
 
 c-sources:
   - cbits/freeablo.cpp

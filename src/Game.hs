@@ -12,8 +12,8 @@ import GHC.Word (Word32)
 import Linear.V2
 import Linear.Affine
 import Reflex
-import SDLEvent
-import SDLEventLoop
+import Reflex.SDL.Event
+import Reflex.SDL.Host
 import SDL hiding (Renderer, Event)
 
 import Freeablo

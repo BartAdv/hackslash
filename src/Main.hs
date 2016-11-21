@@ -5,7 +5,7 @@ module Main (main) where
 import Freeablo
 import Game
 import Types
-import SDLEventLoop
+import Reflex.SDL.Host
 
 main :: IO ()
 main = do
