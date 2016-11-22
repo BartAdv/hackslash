@@ -1,47 +1,61 @@
 #include "faio/faio.h"
 #include "level/level.h"
+#include "render/levelobjects.h"
+#include "render/render.h"
 #include "faworld/world.h"
 #include "farender/renderer.h"
 
 extern "C"
 {
-  void Renderer_renderFrame(FARender::Renderer* renderer, FAWorld::GameLevel* level, int32_t x, int32_t y)
+  void Render_renderFrame(FARender::SpriteManager* spriteManager, Level::Level* level, Render::LevelObjects* levelObjects, int32_t x, int32_t y)
   {
-    FARender::RenderState* state = renderer->getFreeState();
-    if(state) {
-      state->mPos = FAWorld::Position(x, y);
-      if(level != NULL)
-        state->tileset = renderer->getTileset(*level);
-      state->level = level;
-      // if(!FAGui::cursorPath.empty())
-      //   state->mCursorEmpty = false;
-      // else
-      //   state->mCursorEmpty = true;
-      // state->mCursorFrame = FAGui::cursorFrame;
-      // state->mCursorSpriteGroup = renderer.loadImage("data/inv/objcurs.cel");
-            // world.fillRenderState(state);
-      // Render::updateGuiBuffer(&state->guiDrawBuffer);
-    }
-    // else
-    //   {
-    //     Render::updateGuiBuffer(NULL);
-    //   }
-    renderer->renderFrame(state);
-    // single-threaded rendering:
-    state->ready = true;
+    auto minTops = spriteManager->getTileset(level->getTileSetPath(), level->getMinPath(), true);
+    auto minBottoms = spriteManager->getTileset(level->getTileSetPath(), level->getMinPath(), false);
+
+    if(levelObjects->width() != level->width() || levelObjects->height() != level->height())
+      levelObjects->resize(level->width(), level->height());
+
+    Render::drawLevel(*level, minTops->getCacheIndex(), minBottoms->getCacheIndex(), spriteManager, *levelObjects, x, y
+                      // no smooth scrolling
+                      , x, y, 0);
+
+    Render::draw();
   }
 
-  FARender::Renderer* Renderer_create(int32_t width, int32_t height, int32_t fullscreen)
+  void Render_init(int32_t width, int32_t height, int32_t fullscreen)
   {
-    return new FARender::Renderer(width, height, fullscreen != 0);
+
+    Render::RenderSettings settings;
+    settings.windowWidth = width;
+    settings.windowHeight = height;
+    settings.fullscreen = fullscreen;
+
+    Render::init(settings);
   }
 
-  void Renderer_destroy(FARender::Renderer* renderer)
+  void Render_quit()
   {
-    renderer->cleanup(); // ??
-    renderer->stop();
-    renderer->waitUntilDone();
-    delete renderer;
+    Render::quit();
+  }
+
+  Render::LevelObjects* Render_createLevelObjects()
+  {
+    return new Render::LevelObjects();
+  }
+
+  void Render_destroyLevelObjects(Render::LevelObjects* levelObjects)
+  {
+    delete levelObjects;
+  }
+
+  FARender::SpriteManager* FARender_createSpriteManager()
+  {
+    return new FARender::SpriteManager(1024);
+  }
+
+  void FARender_destroySpriteManager(FARender::SpriteManager* manager)
+  {
+    delete manager;
   }
 
   Level::Level* World_createTownLevel()

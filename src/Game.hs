@@ -68,8 +68,8 @@ screenScroll initialPos keyPress = accum (\pos d -> pos + P d) initialPos camera
     moveDown   = V2 1 1       <$ ffilter (== KeycodeDown) keyPress
     cameraMove = leftmost [moveLeft, moveRight, moveUp, moveDown]
 
-game :: Renderer -> Level -> SDLApp t m
-game renderer level sel = do
+game :: SpriteManager -> Level -> LevelObjects -> SDLApp t m
+game spriteManager level levelObjects sel = do
   let keyPress = fmap (keysymKeycode . keyboardEventKeysym) .
                  ffilter ((== Pressed) . keyboardEventKeyMotion) .
                  select sel $
@@ -79,16 +79,17 @@ game renderer level sel = do
   cameraPos <- screenScroll (P (V2 50 50)) keyPress
   monster <- testMonster (Input tick)
   let game' = Game cameraPos monster
-  performEvent_ $ renderGame renderer level game' <$ tick
+  performEvent_ $ renderGame spriteManager level levelObjects game' <$ tick
   performEvent_ $ liftIO quit <$ eQuit
   return eQuit
 
 -- need to figure out correct monad stack, this looks tedious with all the liftIO
 renderGame :: (Reflex t, MonadSample t m, MonadIO m)
-           => Renderer
+           => SpriteManager
            -> Level
+           -> LevelObjects
            -> Game t
            -> m ()
-renderGame renderer level Game{..} = do
+renderGame spriteManager level levelObjects Game{..} = do
   cameraPos@(P (V2 x y)) <- sample gameCameraPos
-  renderFrame renderer level cameraPos
+  renderFrame spriteManager level levelObjects cameraPos

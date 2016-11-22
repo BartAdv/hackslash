@@ -4,9 +4,14 @@
 extern "C" {
   void FAIO_init();
 
-  FARender::Renderer* Renderer_create(int32_t, int32_t);
-  void Renderer_renderFrame(FARender::Renderer*, FAWorld::GameLevel*, int32_t, int32_t);
-  void Renderer_destroy();
+  void Render_init(int32_t, int32_t, int32_t);
+  void Render_renderFrame(FARender::SpriteManager* spriteManager, Level::Level* level, LevelObjects* levelObjects, int32_t x, int32_t y)
+  void Render_quit();
+  Render::LevelObjects* Render_createLevelObjets();
+  void Render_destroyLevelObjects(Render::LevelObjects*);
+
+  FARender::SpriteManager* FARender_createSpriteManager();
+  void FARender_destroySpriteManager(FARender::SpriteManager* manager);
 
   Level::Level* World_createTownLevel();
 }
