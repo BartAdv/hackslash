@@ -12,7 +12,6 @@ main = do
   initFAIO
   renderer <- initRenderer 1200 1080 False
   spriteManager <- createSpriteManager
-  levelObjects <- createLevelObjects
   town <- createTownLevel
-  sdlHost (Just ticksPerSecond) (game spriteManager town levelObjects)
+  sdlHost (Just ticksPerSecond) (game spriteManager town)
   -- TODO: finalize/free

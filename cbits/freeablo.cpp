@@ -48,6 +48,27 @@ extern "C"
     delete levelObjects;
   }
 
+  void Render_moveLevelObject(Render::LevelObjects* levelObjects, int32_t fromX, int32_t fromY, int32_t toX, int32_t toY)
+  {
+    (*levelObjects)[toX][toY] = (*levelObjects)[fromX][fromY];
+    (*levelObjects)[fromX][fromY].valid = false;
+  }
+
+  void Render_setLevelObject(Render::LevelObjects* levelObjects, int32_t x, int32_t y
+                                , int32_t valid, uint32_t spriteCacheIndex, size_t spriteFrame, int32_t x2, int32_t y2, int32_t dist)
+  {
+    if(levelObjects->width() <= x || levelObjects->height() <= y)
+      levelObjects->resize(std::max(levelObjects->width(), (size_t)x), std::max(levelObjects->height(), (size_t)y));
+
+    auto& obj = (*levelObjects)[x][y];
+    obj.valid = valid;
+    obj.spriteCacheIndex = spriteCacheIndex;
+    obj.spriteFrame = spriteFrame;
+    obj.x2 = x2;
+    obj.y2 = y2;
+    obj.dist = dist;
+  }
+
   FARender::SpriteManager* FARender_createSpriteManager()
   {
     return new FARender::SpriteManager(1024);
@@ -56,6 +77,21 @@ extern "C"
   void FARender_destroySpriteManager(FARender::SpriteManager* manager)
   {
     delete manager;
+  }
+
+  FARender::FASpriteGroup* FARender_loadImage(FARender::SpriteManager* manager, const char* path)
+  {
+    return manager->get((std::string)path);
+  }
+
+  uint32_t FARender_getSpriteCacheIndex(FARender::FASpriteGroup* sprite)
+  {
+    return sprite->getCacheIndex();
+  }
+
+  uint32_t FARender_getSpriteAnimLength(FARender::FASpriteGroup* sprite)
+  {
+    return sprite->getAnimLength();
   }
 
   Level::Level* World_createTownLevel()

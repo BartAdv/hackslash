@@ -26,29 +26,31 @@ ticksPerSecond = 60
 
 data Game t = Game {
   gameCameraPos :: Behavior t Coord,
-  -- boring game
-  gameMonster :: Monster t
+  gameMonsters :: [Monster t]
 }
 
 type Health = Int
 
-data Monster t = Monster {
-  monsterHealth :: Behavior t Health,
-  monsterAnimationFrame :: Behavior t Int,
-  monsterCoords :: Behavior t Coord
-}
+data Monster t = Monster
+  { monsterAnim :: SpriteGroup
+  , monsterHealth :: Behavior t Health
+  , monsterAnimationFrame :: Dynamic t Int
+  , monsterPos :: Dynamic t Coord
+  , monsterDie :: Event t () }
 
-data Input t = Input {
-  inputTick :: Event t Word32
-}
+data Input t = Input
+  { inputTick :: Event t Word32}
 
-testMonster :: (Reflex t, MonadFix m, MonadHold t m)
-            => Input t
+testMonster :: (Reflex t, MonadFix m, MonadHold t m, MonadIO m)
+            => SpriteManager
+            -> Input t
             -> m (Monster t)
-testMonster Input{..} = do
-  frame <- accum (+) 0 (1 <$ inputTick)
-  let coords = constant (P (V2 20 20))
-  pure $ Monster undefined frame coords
+testMonster spriteManager Input{..} = do
+  anim <- loadImage spriteManager "monsters/fatc/fatca.cl2"
+  animLength <- getSpriteAnimLength anim
+  frame <- accum (\acc d -> (acc + d) `mod` animLength) 0 (1 <$ inputTick)
+  let pos = constDyn (P (V2 55 50))
+  pure $ Monster anim (constant 100) frame pos never
 
 data GameState = GameState {
   gameStateCameraPos :: Coord
@@ -68,8 +70,21 @@ screenScroll initialPos keyPress = accum (\pos d -> pos + P d) initialPos camera
     moveDown   = V2 1 1       <$ ffilter (== KeycodeDown) keyPress
     cameraMove = leftmost [moveLeft, moveRight, moveUp, moveDown]
 
-game :: SpriteManager -> Level -> LevelObjects -> SDLApp t m
-game spriteManager level levelObjects sel = do
+hookLevelObjects :: (PerformEvent t m, MonadIO (Performable m), MonadIO m)
+                 => [Monster t]
+                 -> m LevelObjects
+hookLevelObjects monsters = do
+  levelObjects <- createLevelObjects
+  traverse (updateObject levelObjects) monsters
+  pure levelObjects
+  where
+    updateObject objs Monster{..} = do
+      let posFrame = attachPromptlyDyn monsterPos (updated monsterAnimationFrame)
+      performEvent_ $ (\(pos, frame) -> do spriteCacheIndex <- getSpriteCacheIndex monsterAnim
+                                           updateLevelObject objs pos spriteCacheIndex frame) <$> posFrame
+
+game :: SpriteManager -> Level -> SDLApp t m
+game spriteManager level sel = do
   let keyPress = fmap (keysymKeycode . keyboardEventKeysym) .
                  ffilter ((== Pressed) . keyboardEventKeyMotion) .
                  select sel $
@@ -77,8 +92,10 @@ game spriteManager level levelObjects sel = do
       eQuit = void $ ffilter (== KeycodeEscape) keyPress
       tick = select sel SDLTick
   cameraPos <- screenScroll (P (V2 50 50)) keyPress
-  monster <- testMonster (Input tick)
-  let game' = Game cameraPos monster
+  monster <- testMonster spriteManager (Input tick)
+  let monsters = [monster]
+  let game' = Game cameraPos monsters
+  levelObjects <- hookLevelObjects monsters
   performEvent_ $ renderGame spriteManager level levelObjects game' <$ tick
   performEvent_ $ liftIO quit <$ eQuit
   return eQuit
