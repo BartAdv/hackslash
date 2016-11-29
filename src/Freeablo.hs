@@ -55,9 +55,9 @@ moveLevelObject (LevelObjects objs) (P (fmap fromIntegral -> V2 fromX fromY)) (P
 
 newtype SpriteCacheIndex = SpriteCacheIndex CInt
 
-updateLevelObject :: MonadIO m => LevelObjects -> Coord -> SpriteCacheIndex -> Int -> m ()
-updateLevelObject (LevelObjects pObjs) (P (fmap fromIntegral -> V2 x y)) (SpriteCacheIndex (fromIntegral -> spriteCacheIndex)) (fromIntegral -> spriteFrame) =
-  liftIO $ setLevelObjectFFI pObjs x y 1 spriteCacheIndex spriteFrame x y 0
+updateLevelObject :: MonadIO m => LevelObjects -> Coord -> SpriteCacheIndex -> Int -> Coord -> MoveDist -> m ()
+updateLevelObject (LevelObjects pObjs) (P (fmap fromIntegral -> V2 x y)) (SpriteCacheIndex (fromIntegral -> spriteCacheIndex)) (fromIntegral -> spriteFrame) (P (fmap fromIntegral -> V2 x2 y2)) (MoveDist dist) =
+  liftIO $ setLevelObjectFFI pObjs x y 1 spriteCacheIndex spriteFrame x2 y2 (fromIntegral dist)
 
 createSpriteManager :: MonadIO m => m SpriteManager
 createSpriteManager = liftIO $ SpriteManager <$> createSpriteManagerFFI
