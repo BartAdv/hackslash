@@ -1,6 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
@@ -17,11 +18,13 @@ import Linear.Affine
 import Reflex
 import Reflex.SDL.Event
 import Reflex.SDL.Host
-import SDL hiding (Renderer, Event)
+import SDL hiding (Renderer, Event, trace)
 
+import Animation
 import Freeablo
 import Types
 
+import Debug.Trace
 import Reflex.Dynamic (traceDyn)
 
 ticksPerSecond :: Int
@@ -34,13 +37,16 @@ data Game t = Game {
 
 type Health = Int
 
+data AnimationFrame = AnimationFrame
+  { animationFrameIdx :: Int
+  , animationFrameMoveDist :: MoveDist }
+
 data Monster t = Monster
-  { monsterAnim :: SpriteGroup
+  { monsterAnim :: Dynamic t Animation
   , monsterHealth :: Behavior t Health
-  , monsterAnimationFrame :: Dynamic t Int
+  , monsterAnimationFrame :: Dynamic t AnimationFrame
   , monsterPosition :: Dynamic t Coord
   , monsterDirection :: Dynamic t Direction
-  , monsterMoveDist :: Dynamic t MoveDist
   , monsterDie :: Event t () }
 
 data Input t = Input
@@ -48,6 +54,7 @@ data Input t = Input
 
 type Path = [Coord]
 
+-- this seems to be lossy
 every :: (Reflex t, MonadHold t m, MonadFix m, Integral n)
       => n
       -> Event t a
@@ -59,19 +66,22 @@ every n e = do
 movement :: (Reflex t, MonadHold t m, MonadFix m)
          => Input t
          -> Coord
+         -> Animation
          -> Event t [Coord] -- TODO: last elem is dropped
-         -> m (Dynamic t (Coord, Direction), Dynamic t MoveDist)
-movement Input{..} initialPos path = do
-  let speed = 10
+         -> m (Dynamic t (Coord, Direction), Dynamic t AnimationFrame)
+movement Input{..} initialPos (Animation{animationLength}) path = do
+  let speed = 10 -- move one square per n ticks
   moved <- every speed inputTick
   coords <- accum (flip ($)) [] $ mergeWith (.) [(\path _ -> pathWithDirections path) <$> path -- new path arrives, replace the coords
                                                 , drop 1 <$ moved -- on move, drop the coord
                                                 ]
-  moveDist <- foldDyn ($) 0 $ mergeWith (.) [(+ speed) <$ inputTick
+  moveDist <- foldDyn ($) 0 $ mergeWith (.) [(+ speed) <$ inputTick -- or leftmost with const 0 being first?
                                             , const 0 <$ moved]
   let posDir = head <$> ffilter (not . null) (tag coords moved)
   posDir <- holdDyn (initialPos, DirN) posDir
-  pure (posDir, MoveDist <$> moveDist)
+  frameTick <- every (speed `div` animationLength) inputTick
+  frame <- accum (\acc d -> (acc + d) `mod` animationLength) 0 (1 <$ frameTick)
+  pure (posDir, AnimationFrame <$> frame <*> (MoveDist <$> moveDist))
   where
     pathWithDirections path =
       ffor (zip path (drop 1 path)) $ \(from, to) -> (from, calcDir from to)
@@ -92,16 +102,14 @@ testMonster :: (Reflex t, MonadFix m, MonadHold t m, MonadIO m)
             -> Input t
             -> m (Monster t)
 testMonster spriteManager input@Input{..} = do
-  anim <- loadImage spriteManager "monsters/fatc/fatcw.cl2"
-  animLength <- getSpriteAnimLength anim
-  frame <- accum (\acc d -> (acc + d) `mod` animLength) 0 (1 <$ inputTick)
+  animSet <- loadMonsterAnimSet spriteManager "fatc"
   let initialCoord = (P (V2 60 70))
       initialPos = initialCoord
       testPath = [initialCoord + P (V2 i 0) | i <- [0..10]]
   testPath <- every 60 $ testPath <$ inputTick
-  (posDir, moveDist) <- movement input initialPos testPath
+  (posDir, animFrame) <- movement input initialPos (animSetWalk animSet) testPath
   let (pos, dir) = splitDynPure posDir
-  pure $ Monster anim (constant 100) frame pos dir moveDist never
+  pure $ Monster (constDyn (animSetWalk animSet)) (constant 100) animFrame pos dir never
 
 data GameState = GameState {
   gameStateCameraPos :: Coord
@@ -121,7 +129,7 @@ screenScroll initialPos keyPress = accum (\pos d -> pos + P d) initialPos camera
     moveDown   = V2 1 1       <$ ffilter (== KeycodeDown) keyPress
     cameraMove = leftmost [moveLeft, moveRight, moveUp, moveDown]
 
-hookLevelObjects :: (PerformEvent t m, MonadIO (Performable m), MonadIO m)
+hookLevelObjects :: (PerformEvent t m, MonadSample t (Performable m), MonadIO (Performable m), MonadIO m)
                  => [Monster t]
                  -> m LevelObjects
 hookLevelObjects monsters = do
@@ -131,17 +139,18 @@ hookLevelObjects monsters = do
   where
     updateObject objs Monster{..} = do
       let bPos = current monsterPosition -- so that we refer to position before update
-          animUpdate = (,,) <$> monsterDirection <*> monsterMoveDist <*> monsterAnimationFrame
+          bAnim = current monsterAnim
+          animUpdate = (,) <$> monsterDirection <*> monsterAnimationFrame
           posFrame = attach bPos (updated animUpdate)
       performEvent_ $
-        (\(pos, (Direction dir, dist, frame)) -> do
-            spriteCacheIndex <- getSpriteCacheIndex monsterAnim
-            animLength <- getSpriteAnimLength monsterAnim
+        (\(pos, (Direction dir, AnimationFrame frame dist)) -> do
+            Animation spriteGroup animLength <- sample bAnim
+            spriteCacheIndex <- getSpriteCacheIndex spriteGroup
             let to = followDir pos (Direction dir)
             updateLevelObject objs pos spriteCacheIndex (frame + dir * animLength) to dist)
         <$> posFrame
       let fromTo = attach bPos (updated monsterPosition)
-      performEvent_ $ (\(from, to) -> moveLevelObject objs from to) <$> fromTo
+      performEvent_ $ uncurry (moveLevelObject objs) <$> fromTo
 
 game :: SpriteManager -> Level -> SDLApp t m
 game spriteManager level sel = do
