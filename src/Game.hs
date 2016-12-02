@@ -65,36 +65,21 @@ movement :: (Reflex t, MonadHold t m, MonadFix m)
          => Input t
          -> Coord
          -> Animation
-         -> Event t [Coord] -- TODO: last elem is dropped
-         -> m (Dynamic t (Coord, Direction), Dynamic t AnimationFrame)
+         -> Event t [Direction] -- TODO: last elem is dropped
+         -> m (Dynamic t Direction, Dynamic t AnimationFrame)
 movement Input{..} initialPos Animation{animationLength} path = do
-  let speed = animationLength -- meaning one frame per one tick
+  let speed = animationLength * 2 -- meaning one frame per one tick
   moved <- every speed inputTick
-  coords <- accum (flip ($)) [] $ mergeWith (.) [(\path _ -> pathWithDirections path) <$> path -- new path arrives, replace the coords
-                                                , drop 1 <$ moved -- on move, drop the coord
-                                                ]
-  let posDir = head <$> ffilter (not . null) (tag coords moved)
-  posDir <- holdDyn (initialPos, DirN) posDir
+  path <- accum (flip ($)) [] $ mergeWith (.) [ const <$> path -- new path arrives, replace the coords
+                                              , drop 1 <$ moved -- on move, drop the coord
+                                              ]
+  dir <- holdDyn DirN $ head <$> ffilter (not . null) (tag path moved)
   frameTick <- every (speed `div` animationLength) inputTick
   frame <- accum (\acc f -> f acc `mod` animationLength) 0 $ leftmost [ const 0 <$ moved
                                                                       , (+1) <$ frameTick]
   -- freeablo wants it to be a percentage of the way towards next square
   let moveDist = (\f -> f * 100 `div` animationLength) <$> frame
-  pure (posDir, AnimationFrame <$> frame <*> (MoveDist <$> moveDist))
-  where
-    pathWithDirections path =
-      ffor (zip path (drop 1 path)) $ \(from, to) -> (from, calcDir from to)
-    calcDir from to =
-      let (P (V2 x y)) = to - from in
-      case (x, y) of
-        (-1, -1) -> DirN
-        (0, -1) -> DirNE
-        (1,-1) -> DirE
-        (1, 0) -> DirSE
-        (1, 1) -> DirS
-        (0, 1) -> DirSW
-        (-1, 1) -> DirW
-        (-1, 0) -> DirNW
+  pure (dir, AnimationFrame <$> frame <*> (MoveDist <$> moveDist))
 
 testMonster :: (Reflex t, MonadFix m, MonadHold t m, MonadIO m)
             => SpriteManager
@@ -103,11 +88,10 @@ testMonster :: (Reflex t, MonadFix m, MonadHold t m, MonadIO m)
 testMonster spriteManager input@Input{..} = do
   animSet <- loadMonsterAnimSet spriteManager "fatc"
   let initialCoord = (P (V2 60 70))
-      initialPos = initialCoord
-      testPath = [initialCoord + P (V2 i 0) | i <- [0..10]]
-  testPath <- every 60 $ testPath <$ inputTick
-  (posDir, animFrame) <- movement input initialPos (animSetWalk animSet) testPath
-  let (pos, dir) = splitDynPure posDir
+      testPath = [Direction (i `mod` 8) | i <- [0..100]]
+  testPath <- every 600 $ testPath <$ inputTick
+  (dir, animFrame) <- movement input initialCoord (animSetWalk animSet) testPath
+  pos <- foldDyn followDir initialCoord (updated dir)
   pure $ Monster (constDyn (animSetWalk animSet)) animFrame pos dir never
 
 data GameState = GameState {
@@ -145,7 +129,7 @@ hookLevelObjects monsters = do
         (\(pos, (Direction dir, AnimationFrame frame dist)) -> do
             Animation spriteGroup animLength <- sample bAnim
             spriteCacheIndex <- getSpriteCacheIndex spriteGroup
-            let to = followDir pos (Direction dir)
+            let to = followDir (Direction dir) pos 
             updateLevelObject objs pos spriteCacheIndex (frame + dir * animLength) to dist)
         <$> posFrame
       let fromTo = attach bPos (updated monsterPosition)

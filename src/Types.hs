@@ -32,8 +32,8 @@ pattern DirNE = Direction 5
 pattern DirE  = Direction 6
 pattern DirSE = Direction 7
 
-followDir :: Coord -> Direction -> Coord
-followDir origin dir =
+followDir :: Direction -> Coord -> Coord
+followDir dir origin =
   origin + P (V2 ox oy)
   where
     (ox, oy) = case dir of
