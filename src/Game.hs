@@ -24,7 +24,7 @@ import Animation
 import Freeablo
 import Types
 
-import Debug.Trace
+import Debug.Trace hiding (traceEvent)
 import Reflex.Dynamic (traceDyn)
 
 ticksPerSecond :: Int
@@ -43,7 +43,6 @@ data AnimationFrame = AnimationFrame
 
 data Monster t = Monster
   { monsterAnim :: Dynamic t Animation
-  , monsterHealth :: Behavior t Health
   , monsterAnimationFrame :: Dynamic t AnimationFrame
   , monsterPosition :: Dynamic t Coord
   , monsterDirection :: Dynamic t Direction
@@ -54,7 +53,6 @@ data Input t = Input
 
 type Path = [Coord]
 
--- this seems to be lossy
 every :: (Reflex t, MonadHold t m, MonadFix m, Integral n)
       => n
       -> Event t a
@@ -69,18 +67,19 @@ movement :: (Reflex t, MonadHold t m, MonadFix m)
          -> Animation
          -> Event t [Coord] -- TODO: last elem is dropped
          -> m (Dynamic t (Coord, Direction), Dynamic t AnimationFrame)
-movement Input{..} initialPos (Animation{animationLength}) path = do
-  let speed = 10 -- move one square per n ticks
+movement Input{..} initialPos Animation{animationLength} path = do
+  let speed = animationLength -- meaning one frame per one tick
   moved <- every speed inputTick
   coords <- accum (flip ($)) [] $ mergeWith (.) [(\path _ -> pathWithDirections path) <$> path -- new path arrives, replace the coords
                                                 , drop 1 <$ moved -- on move, drop the coord
                                                 ]
-  moveDist <- foldDyn ($) 0 $ mergeWith (.) [(+ speed) <$ inputTick -- or leftmost with const 0 being first?
-                                            , const 0 <$ moved]
   let posDir = head <$> ffilter (not . null) (tag coords moved)
   posDir <- holdDyn (initialPos, DirN) posDir
   frameTick <- every (speed `div` animationLength) inputTick
-  frame <- accum (\acc d -> (acc + d) `mod` animationLength) 0 (1 <$ frameTick)
+  frame <- accum (\acc f -> f acc `mod` animationLength) 0 $ leftmost [ const 0 <$ moved
+                                                                      , (+1) <$ frameTick]
+  -- freeablo wants it to be a percentage of the way towards next square
+  let moveDist = (\f -> f * 100 `div` animationLength) <$> frame
   pure (posDir, AnimationFrame <$> frame <*> (MoveDist <$> moveDist))
   where
     pathWithDirections path =
@@ -109,7 +108,7 @@ testMonster spriteManager input@Input{..} = do
   testPath <- every 60 $ testPath <$ inputTick
   (posDir, animFrame) <- movement input initialPos (animSetWalk animSet) testPath
   let (pos, dir) = splitDynPure posDir
-  pure $ Monster (constDyn (animSetWalk animSet)) (constant 100) animFrame pos dir never
+  pure $ Monster (constDyn (animSetWalk animSet)) animFrame pos dir never
 
 data GameState = GameState {
   gameStateCameraPos :: Coord

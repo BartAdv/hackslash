@@ -55,7 +55,7 @@ extern "C"
   }
 
   void Render_setLevelObject(Render::LevelObjects* levelObjects, int32_t x, int32_t y
-                             , int32_t valid, uint32_t spriteCacheIndex, size_t spriteFrame, int32_t x2, int32_t y2, int32_t dist)
+                            ,int32_t valid, uint32_t spriteCacheIndex, size_t spriteFrame, int32_t x2, int32_t y2, int32_t dist)
   {
     if(levelObjects->width() <= x || levelObjects->height() <= y)
       levelObjects->resize(std::max(levelObjects->width(), (size_t)x), std::max(levelObjects->height(), (size_t)y));
