@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PatternSynonyms #-}
 module Types
@@ -21,9 +22,9 @@ import Linear.Affine
 import Linear.V2
 
 type Coord = Point V2 Int
-newtype Direction = Direction Int deriving Show
+newtype Direction = Direction Int
 
-pattern DirS = Direction 0
+pattern DirS  = Direction 0
 pattern DirSW = Direction 1
 pattern DirW  = Direction 2
 pattern DirNW = Direction 3
@@ -31,6 +32,16 @@ pattern DirN  = Direction 4
 pattern DirNE = Direction 5
 pattern DirE  = Direction 6
 pattern DirSE = Direction 7
+
+instance Show Direction where
+  show DirS  = "S"
+  show DirSW = "SW"
+  show DirW  = "W"
+  show DirNW = "NW"
+  show DirN  = "N"
+  show DirNE = "NE"
+  show DirE  = "E"
+  show DirSE = "SE"
 
 followDir :: Direction -> Coord -> Coord
 followDir dir origin =
@@ -46,5 +57,5 @@ followDir dir origin =
       DirW  -> (-1, 1)
       DirNW -> (-1, 0)
 
-newtype MoveDist = MoveDist Int deriving Show
+newtype MoveDist = MoveDist Int deriving (Show, Num, Enum, Eq, Ord, Real, Integral)
 

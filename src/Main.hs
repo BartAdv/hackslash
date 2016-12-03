@@ -10,7 +10,7 @@ import Reflex.SDL.Host
 main :: IO ()
 main = do
   initFAIO
-  renderer <- initRenderer 1200 1080 False
+  renderer <- initRenderer 1920 1080 False
   spriteManager <- createSpriteManager
   town <- createTownLevel
   sdlHost (Just ticksPerSecond) (game spriteManager town)

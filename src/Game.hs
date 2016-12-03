@@ -7,9 +7,10 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 module Game where
 
-import Control.Monad (void)
+import Control.Monad (void, join, (<=<))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Fix (MonadFix)
 import GHC.Word (Word32)
@@ -28,7 +29,7 @@ import Debug.Trace hiding (traceEvent)
 import Reflex.Dynamic (traceDyn)
 
 ticksPerSecond :: Int
-ticksPerSecond = 60
+ticksPerSecond = 25
 
 data Game t = Game {
   gameCameraPos :: Behavior t Coord,
@@ -53,33 +54,35 @@ data Input t = Input
 
 type Path = [Coord]
 
-every :: (Reflex t, MonadHold t m, MonadFix m, Integral n)
-      => n
-      -> Event t a
-      -> m (Event t a)
-every n e = do
-  count <- accum (+) 0 (1 <$ e)
-  pure $ attachWithMaybe (\c v -> if c `mod` n == 0 then Just v else Nothing) count e
+data Movement t = Movement
+  { movementDirection :: Dynamic t Direction
+  , movementPosition :: Dynamic t Coord
+  , movementAnimationFrame :: Dynamic t AnimationFrame
+  }
 
 movement :: (Reflex t, MonadHold t m, MonadFix m)
          => Input t
-         -> Coord
+         -> (Coord, Direction)
          -> Animation
-         -> Event t [Direction] -- TODO: last elem is dropped
-         -> m (Dynamic t Direction, Dynamic t AnimationFrame)
-movement Input{..} initialPos Animation{animationLength} path = do
-  let speed = animationLength * 2 -- meaning one frame per one tick
-  moved <- every speed inputTick
-  path <- accum (flip ($)) [] $ mergeWith (.) [ const <$> path -- new path arrives, replace the coords
-                                              , drop 1 <$ moved -- on move, drop the coord
-                                              ]
-  dir <- holdDyn DirN $ head <$> ffilter (not . null) (tag path moved)
-  frameTick <- every (speed `div` animationLength) inputTick
-  frame <- accum (\acc f -> f acc `mod` animationLength) 0 $ leftmost [ const 0 <$ moved
-                                                                      , (+1) <$ frameTick]
+         -> Event t [Direction]
+         -> m (Movement t)
+movement Input{..} (initialPos, initialDir) Animation{animationLength} ePath = do
   -- freeablo wants it to be a percentage of the way towards next square
-  let moveDist = (\f -> f * 100 `div` animationLength) <$> frame
-  pure (dir, AnimationFrame <$> frame <*> (MoveDist <$> moveDist))
+  moveDist <- accum (\acc d -> (acc + d) `mod` 100) 0 $ 10 <$ inputTick -- 10 is derived from: secondsPerTick * 250 from freeablo
+  let moved = ffilter (== 0) (updated moveDist)
+  path <- accum (flip ($)) [] $ leftmost [ const <$> ePath -- new path arrives, replace the coords
+                                         , drop 1 <$ moved -- on move, drop the coord
+                                         ]
+  -- dir change either on new path or on next path fragment
+  let dirChange = leftmost [void moved, void ePath]
+  dir <- holdDyn initialDir $ head <$> ffilter (not . null) (tagPromptlyDyn path dirChange)
+  let frameTick = inputTick
+  frame <- accum (\acc d -> (acc + d) `mod` animationLength) 0 $ 1 <$ frameTick
+  -- on move, use previous direction to calculate the coord
+  let (fmap fst -> dirChange) = attach (current dir) (updated dir)
+  pos <- foldDyn followDir initialPos dirChange
+  let animFrame = AnimationFrame <$> frame <*> moveDist
+  pure $ Movement dir pos animFrame
 
 testMonster :: (Reflex t, MonadFix m, MonadHold t m, MonadIO m)
             => SpriteManager
@@ -87,12 +90,11 @@ testMonster :: (Reflex t, MonadFix m, MonadHold t m, MonadIO m)
             -> m (Monster t)
 testMonster spriteManager input@Input{..} = do
   animSet <- loadMonsterAnimSet spriteManager "fatc"
-  let initialCoord = (P (V2 60 70))
-      testPath = [Direction (i `mod` 8) | i <- [0..100]]
-  testPath <- every 600 $ testPath <$ inputTick
-  (dir, animFrame) <- movement input initialCoord (animSetWalk animSet) testPath
-  pos <- foldDyn followDir initialCoord (updated dir)
-  pure $ Monster (constDyn (animSetWalk animSet)) animFrame pos dir never
+  let initialCoord = (P (V2 61 68))
+      testPath = join $ repeat [DirSE, DirSE,  DirS, DirS,  DirSW, DirSW, DirW, DirW, DirNW, DirNW, DirN, DirN, DirNE, DirNE, DirE, DirE]
+  testPath <- headE $ testPath <$ inputTick
+  Movement{..} <- movement input (initialCoord, DirN) (animSetWalk animSet) testPath
+  pure $ Monster (constDyn (animSetWalk animSet)) movementAnimationFrame movementPosition movementDirection never
 
 data GameState = GameState {
   gameStateCameraPos :: Coord
@@ -129,7 +131,7 @@ hookLevelObjects monsters = do
         (\(pos, (Direction dir, AnimationFrame frame dist)) -> do
             Animation spriteGroup animLength <- sample bAnim
             spriteCacheIndex <- getSpriteCacheIndex spriteGroup
-            let to = followDir (Direction dir) pos 
+            let to = followDir (Direction dir) pos
             updateLevelObject objs pos spriteCacheIndex (frame + dir * animLength) to dist)
         <$> posFrame
       let fromTo = attach bPos (updated monsterPosition)
