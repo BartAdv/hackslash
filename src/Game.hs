@@ -2,11 +2,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 module Game where
 
@@ -50,57 +50,76 @@ data Monster t = Monster
   , monsterDie :: Event t () }
 
 data Input t = Input
-  { inputTick :: Event t Word32 }
+  { inputTick :: Event t Word32
+  , inputKeyPress :: Event t Keycode }
 
-type Path = [Coord]
+type Path = [Direction]
 
-data Movement t = Movement
-  { movementDirection :: Dynamic t Direction
-  , movementPosition :: Dynamic t Coord
-  , movementAnimationFrame :: Dynamic t AnimationFrame
+data Activity t = Activity
+  { activityAnimation :: Animation
+  , activityAnimationFrame :: Event t AnimationFrame
+  , activityDirection :: Event t Direction
   }
 
-movement :: (Reflex t, MonadHold t m, MonadFix m)
-         => Input t
-         -> (Coord, Direction)
-         -> Animation
-         -> Event t [Direction]
-         -> m (Movement t)
-movement Input{..} (initialPos, initialDir) Animation{animationLength} ePath = do
+walking :: (Reflex t, MonadHold t m, MonadFix m)
+        => Input t
+        -> MonsterAnimSet
+        -> Path
+        -> m (Activity t)
+walking Input{..} animSet cmdPath = do
   -- freeablo wants it to be a percentage of the way towards next square
   moveDist <- accum (\acc d -> (acc + d) `mod` 100) 0 $ 10 <$ inputTick -- 10 is derived from: secondsPerTick * 250 from freeablo
   let moved = ffilter (== 0) (updated moveDist)
-  path <- accum (flip ($)) [] $ leftmost [ const <$> ePath -- new path arrives, replace the coords
-                                         , drop 1 <$ moved -- on move, drop the coord
-                                         ]
-  -- dir change either on new path or on next path fragment
-  let dirChange = leftmost [void moved, void ePath]
-  dir <- holdDyn initialDir $ head <$> ffilter (not . null) (tagPromptlyDyn path dirChange)
-  let frameTick = inputTick
-  frame <- accum (\acc d -> (acc + d) `mod` animationLength) 0 $ 1 <$ frameTick
-  -- on move, use previous direction to calculate the coord
-  let (fmap fst -> dirChange) = attach (current dir) (updated dir)
-  pos <- foldDyn followDir initialPos dirChange
+  path <- accum (\p _ -> drop 1 p) cmdPath moved -- on move, drop the coord
+  let dir = head <$> ffilter (not . null) (tagPromptlyDyn path moved)
+      frameTick = inputTick
+      animation = animSetWalk animSet
+  frame <- accum (\acc d -> (acc + d) `mod` animationLength animation) 0 $ 1 <$ frameTick
   let animFrame = AnimationFrame <$> frame <*> moveDist
-  pure $ Movement dir pos animFrame
+  pure $ Activity animation (updated animFrame) dir
+
+idling :: (Reflex t, MonadHold t m, MonadFix m)
+       => Input t
+       -> MonsterAnimSet
+       -> m (Activity t)
+idling Input{..} animSet = do
+  let animation = animSetIdle animSet
+  frame <- accum (\acc d -> (acc + d) `mod` animationLength animation) 0 $ 1 <$ inputTick
+  let animFrame = (\f -> AnimationFrame f 0) <$> frame
+  pure $ Activity animation animFrame never
+
+data MonsterCmd = CmdIdle | CmdWalk Path
+
+testPath = join $ repeat [DirSE, DirSE,  DirS, DirS,  DirSW, DirSW, DirW, DirW, DirNW, DirNW, DirN, DirN, DirNE, DirNE, DirE, DirE]
+
+actions :: (Reflex t)
+        => Input t
+        -> MonsterAnimSet
+        -> Event t (Activity t)
+actions input@Input{..} animSet =
+  pushAlways (\case
+                 CmdIdle -> idling input animSet
+                 CmdWalk path -> walking input animSet path) $ leftmost [cmdIdle, cmdWalk]
+  where
+    cmdIdle = CmdIdle <$ ffilter (== KeycodeI) inputKeyPress
+    cmdWalk = CmdWalk testPath <$ ffilter (== KeycodeW) inputKeyPress
 
 testMonster :: (Reflex t, MonadFix m, MonadHold t m, MonadIO m)
             => SpriteManager
             -> Input t
             -> m (Monster t)
 testMonster spriteManager input@Input{..} = do
-  animSet <- loadMonsterAnimSet spriteManager "fatc"
-  let initialCoord = (P (V2 61 68))
-      testPath = join $ repeat [DirSE, DirSE,  DirS, DirS,  DirSW, DirSW, DirW, DirW, DirNW, DirNW, DirN, DirN, DirNE, DirNE, DirE, DirE]
-  testPath <- headE $ testPath <$ inputTick
-  Movement{..} <- movement input (initialCoord, DirN) (animSetWalk animSet) testPath
-  pure $ Monster (constDyn (animSetWalk animSet)) movementAnimationFrame movementPosition movementDirection never
-
-data GameState = GameState {
-  gameStateCameraPos :: Coord
-}
-
-newGame = GameState { gameStateCameraPos = P (V2 15 29) }
+  animSet@MonsterAnimSet{..} <- loadMonsterAnimSet spriteManager "fatc"
+  let initialPos = P (V2 61 68)
+      initialDir = DirN
+  initialActivity <- idling input animSet
+  action <- holdDyn initialActivity $ actions input animSet
+  dir <- holdDyn initialDir $ switchPromptlyDyn (activityDirection <$> action)
+  -- on move, use previous direction to calculate the coord
+  let (fmap fst -> dirChange) = attach (current dir) (updated dir)
+  pos <- foldDyn followDir initialPos dirChange
+  frame <- holdDyn (AnimationFrame 0 0) $ switchPromptlyDyn (activityAnimationFrame <$> action)
+  pure $ Monster (activityAnimation <$> action) frame pos dir never
 
 screenScroll :: (Reflex t, MonadHold t m, MonadFix m)
              => Coord
@@ -146,7 +165,7 @@ game spriteManager level sel = do
       eQuit = void $ ffilter (== KeycodeEscape) keyPress
       tick = select sel SDLTick
   cameraPos <- screenScroll (P (V2 55 65)) keyPress
-  monster <- testMonster spriteManager (Input tick)
+  monster <- testMonster spriteManager (Input tick keyPress)
   let monsters = [monster]
   let game' = Game cameraPos monsters
   levelObjects <- hookLevelObjects monsters
