@@ -58,25 +58,32 @@ type Path = [Direction]
 data Activity t = Activity
   { activityAnimation :: Animation
   , activityAnimationFrame :: Event t AnimationFrame
-  , activityDirection :: Event t Direction
+  , activityMove :: Event t Direction
+  , activityRotate :: Event t Direction
   }
 
 walking :: (Reflex t, MonadHold t m, MonadFix m)
-        => Input t
+        => Event t ()
+        -> Input t
         -> MonsterAnimSet
         -> Path
         -> m (Activity t)
-walking Input{..} animSet cmdPath = do
+walking start Input{..} animSet cmdPath = do
   -- freeablo wants it to be a percentage of the way towards next square
-  moveDist <- accum (\acc d -> (acc + d) `mod` 100) 0 $ 10 <$ inputTick -- 10 is derived from: secondsPerTick * 250 from freeablo
-  let moved = ffilter (== 0) (updated moveDist)
-  path <- accum (\p _ -> drop 1 p) cmdPath moved -- on move, drop the coord
-  let dir = head <$> ffilter (not . null) (tagPromptlyDyn path moved)
-      frameTick = inputTick
-      animation = animSetWalk animSet
-  frame <- accum (\acc d -> (acc + d) `mod` animationLength animation) 0 $ 1 <$ frameTick
+  moveDist <- foldDyn (\acc d -> (acc + d) `mod` 100) 0 $ 10 <$ inputTick -- 10 is derived from: secondsPerTick * 250 from freeablo
+  let moved = void $ ffilter (== 0) (updated moveDist)
+      rotated = leftmost [start, moved] -- change direction at the beginning and on every move
+  -- on move, drop the coord from path. Direction is "one step ahead" of movement
+  path <- accum (\p _ -> drop 1 p) cmdPath moved
+  dirs <- accum (\p _ -> drop 1 p) cmdPath rotated
+  let moveDir = safeHeadE $ tag path moved
+      rotateDir = safeHeadE $ tag dirs rotated
+  frame <- foldDyn (\acc d -> (acc + d) `mod` animationLength animation) 0 $ 1 <$ inputTick
   let animFrame = AnimationFrame <$> frame <*> moveDist
-  pure $ Activity animation (updated animFrame) dir
+  pure $ Activity animation (updated animFrame) moveDir rotateDir
+  where
+    animation = animSetWalk animSet
+    safeHeadE el = head <$> ffilter (not . null) el
 
 idling :: (Reflex t, MonadHold t m, MonadFix m)
        => Input t
@@ -86,7 +93,7 @@ idling Input{..} animSet = do
   let animation = animSetIdle animSet
   frame <- accum (\acc d -> (acc + d) `mod` animationLength animation) 0 $ 1 <$ inputTick
   let animFrame = (\f -> AnimationFrame f 0) <$> frame
-  pure $ Activity animation animFrame never
+  pure $ Activity animation animFrame never never
 
 data MonsterCmd = CmdIdle | CmdWalk Path
 
@@ -99,8 +106,9 @@ actions :: (Reflex t)
 actions input@Input{..} animSet =
   pushAlways (\case
                  CmdIdle -> idling input animSet
-                 CmdWalk path -> walking input animSet path) $ leftmost [cmdIdle, cmdWalk]
+                 CmdWalk path -> walking (void cmd) input animSet path) cmd
   where
+    cmd = leftmost [cmdWalk, cmdIdle]
     cmdIdle = CmdIdle <$ ffilter (== KeycodeI) inputKeyPress
     cmdWalk = CmdWalk testPath <$ ffilter (== KeycodeW) inputKeyPress
 
@@ -111,14 +119,13 @@ testMonster :: (Reflex t, MonadFix m, MonadHold t m, MonadIO m)
 testMonster spriteManager input@Input{..} = do
   animSet@MonsterAnimSet{..} <- loadMonsterAnimSet spriteManager "fatc"
   let initialPos = P (V2 61 68)
-      initialDir = DirN
+      initialDir = DirSE
   initialActivity <- idling input animSet
   action <- holdDyn initialActivity $ actions input animSet
-  dir <- holdDyn initialDir $ switchPromptlyDyn (activityDirection <$> action)
-  -- on move, use previous direction to calculate the coord
-  let (fmap fst -> dirChange) = attach (current dir) (updated dir)
-  pos <- foldDyn followDir initialPos dirChange
+  let move = switchPromptlyDyn (activityMove <$> action)
+  pos <- foldDyn followDir initialPos move
   frame <- holdDyn (AnimationFrame 0 0) $ switchPromptlyDyn (activityAnimationFrame <$> action)
+  dir <- holdDyn initialDir $ switchPromptlyDyn $ activityRotate <$> action
   pure $ Monster (activityAnimation <$> action) frame pos dir never
 
 screenScroll :: (Reflex t, MonadHold t m, MonadFix m)

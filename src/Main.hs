@@ -13,5 +13,5 @@ main = do
   renderer <- initRenderer 1920 1080 False
   spriteManager <- createSpriteManager
   town <- createTownLevel
-  sdlHost (Just ticksPerSecond) (game spriteManager town)
+  sdlHost (Just 25) (game spriteManager town)
   -- TODO: finalize/free
