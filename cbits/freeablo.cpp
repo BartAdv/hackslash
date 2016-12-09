@@ -108,6 +108,21 @@ extern "C"
                             std::make_pair(25,29), std::make_pair(75,68), std::map<size_t, size_t>(), -1, 1);
   }
 
+  size_t Level_width(Level::Level* level)
+  {
+    return level->width();
+  }
+
+  size_t Level_height(Level::Level* level)
+  {
+    return level->height();
+  }
+
+  int32_t Level_passable(Level::Level* level, size_t x, size_t y)
+  {
+    return (*level)[x][y].passable();
+  }
+
   void FAIO_init()
   {
     FAIO::init();

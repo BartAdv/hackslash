@@ -1,4 +1,5 @@
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE PatternSynonyms #-}
 module Freeablo where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -25,6 +26,11 @@ foreign import ccall "freeablo.h Render_setLevelObject" setLevelObjectFFI :: Ptr
 
 foreign import ccall "freeablo.h World_createTownLevel" createTownLevelFFI :: IO (Ptr ())
 
+foreign import ccall "freeablo.h Level_width" getWidthFFI :: Ptr () -> IO CInt
+foreign import ccall "freeablo.h Level_height" getHeightFFI :: Ptr () -> IO CInt
+
+foreign import ccall "freeablo.h Level_passable" isPassableFFI :: Ptr () -> CInt -> CInt -> IO CInt
+
 foreign import ccall "freeablo.h FARender_createSpriteManager" createSpriteManagerFFI :: IO (Ptr ())
 foreign import ccall "freeablo.h FARender_destroySpriteManager" destroySpriteManagerFFI :: Ptr () -> IO ()
 foreign import ccall "freeablo.h FARender_loadImage" loadImageFFI :: Ptr () -> CString -> IO (Ptr ())
@@ -39,8 +45,10 @@ initRenderer width height fullscreen =
 quitRenderer :: MonadIO m => m ()
 quitRenderer = liftIO quitRendererFFI
 
+pattern CoordXY x y <- P (fmap fromIntegral -> V2 x y)
+
 renderFrame :: MonadIO m => SpriteManager -> Level -> LevelObjects -> Coord -> m ()
-renderFrame (SpriteManager sm) (Level l) (LevelObjects objs) (P (fmap fromIntegral -> V2 x y)) =
+renderFrame (SpriteManager sm) (Level l) (LevelObjects objs) (CoordXY x y) =
   liftIO $ renderFrameFFI sm l objs x y
 
 createLevelObjects :: MonadIO m => m LevelObjects
@@ -50,13 +58,13 @@ destroyLevelObjects :: MonadIO m => LevelObjects -> m ()
 destroyLevelObjects (LevelObjects ptr) = liftIO $ destroySpriteManagerFFI ptr
 
 moveLevelObject :: MonadIO m => LevelObjects -> Coord -> Coord -> m ()
-moveLevelObject (LevelObjects objs) (P (fmap fromIntegral -> V2 fromX fromY)) (P (fmap fromIntegral -> V2 toX toY)) =
+moveLevelObject (LevelObjects objs) (CoordXY fromX fromY) (CoordXY toX toY) =
   liftIO $ moveLevelObjectFFI objs fromX fromY toX toY
 
 newtype SpriteCacheIndex = SpriteCacheIndex CInt
 
 updateLevelObject :: MonadIO m => LevelObjects -> Coord -> SpriteCacheIndex -> Int -> Coord -> MoveDist -> m ()
-updateLevelObject (LevelObjects pObjs) (P (fmap fromIntegral -> V2 x y)) (SpriteCacheIndex (fromIntegral -> spriteCacheIndex)) (fromIntegral -> spriteFrame) (P (fmap fromIntegral -> V2 x2 y2)) (MoveDist dist) =
+updateLevelObject (LevelObjects pObjs) (CoordXY x y) (SpriteCacheIndex (fromIntegral -> spriteCacheIndex)) (fromIntegral -> spriteFrame) (CoordXY x2 y2) (MoveDist dist) =
   liftIO $ setLevelObjectFFI pObjs x y 1 spriteCacheIndex spriteFrame x2 y2 (fromIntegral dist)
 
 createSpriteManager :: MonadIO m => m SpriteManager
@@ -76,3 +84,13 @@ getSpriteAnimLength (SpriteGroup ptr) = liftIO $ fromIntegral <$> getSpriteAnimL
 
 createTownLevel :: MonadIO m => m Level
 createTownLevel = Level <$> liftIO createTownLevelFFI
+
+isPassable :: MonadIO m => Level -> Coord -> m Bool
+isPassable (Level ptr) (CoordXY x y) = liftIO $ do
+  res <- isPassableFFI ptr x y
+  pure $ res /= 0
+
+levelSize :: MonadIO m => Level -> m (V2 Int)
+levelSize (Level ptr) = liftIO $ do
+  res <- V2 <$> getWidthFFI ptr <*> getHeightFFI ptr
+  pure $ fmap fromIntegral res

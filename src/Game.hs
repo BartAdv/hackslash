@@ -6,13 +6,16 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 module Game where
 
+import Data.List.NonEmpty (NonEmpty)
 import Control.Monad (void, join, (<=<))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Fix (MonadFix)
+import Data.Maybe (fromMaybe)
 import GHC.Word (Word32)
 import Linear.V2
 import Linear.Affine
@@ -23,6 +26,7 @@ import SDL hiding (Renderer, Event, trace)
 
 import Animation
 import Freeablo
+import Path
 import Types
 
 import Debug.Trace hiding (traceEvent)
@@ -51,7 +55,9 @@ data Monster t = Monster
 
 data Input t = Input
   { inputTick :: Event t Word32
-  , inputKeyPress :: Event t Keycode }
+  , inputKeyPress :: Event t Keycode
+  , inputMoves :: Event t (NonEmpty (Coord, Coord))
+  , inputLevel :: Level }
 
 type Path = [Direction]
 
@@ -95,37 +101,43 @@ idling Input{..} animSet = do
   let animFrame = (\f -> AnimationFrame f 0) <$> frame
   pure $ Activity animation animFrame never never
 
-data MonsterCmd = CmdIdle | CmdWalk Path
+data MonsterCmd = CmdIdle | CmdWalk
 
-testPath = join $ repeat [DirSE, DirSE,  DirS, DirS,  DirSW, DirSW, DirW, DirW, DirNW, DirNW, DirN, DirN, DirNE, DirNE, DirE, DirE]
-
-actions :: (Reflex t)
+actions :: Reflex t
         => Input t
+        -> Dynamic t Coord
         -> MonsterAnimSet
         -> Event t (Activity t)
-actions input@Input{..} animSet =
+actions input@Input{..} pos animSet =
   pushAlways (\case
                  CmdIdle -> idling input animSet
-                 CmdWalk path -> walking (void cmd) input animSet path) cmd
+                 CmdWalk -> do
+                   let path = fmap (\pos -> fromMaybe [] $ findPath inputLevel pos (pos + P (V2 10 5))) pos
+                   path' <- sample (current path)
+                   walking (void cmd) input animSet path') cmd
   where
     cmd = leftmost [cmdWalk, cmdIdle]
     cmdIdle = CmdIdle <$ ffilter (== KeycodeI) inputKeyPress
-    cmdWalk = CmdWalk testPath <$ ffilter (== KeycodeW) inputKeyPress
+    cmdWalk = CmdWalk <$ ffilter (== KeycodeW) inputKeyPress
+
+data MonsterState = MonsterState
+ { monsterStatePosition :: Coord
+ , monsterStateDirection :: Direction
+ }
 
 testMonster :: (Reflex t, MonadFix m, MonadHold t m, MonadIO m)
             => SpriteManager
+            -> MonsterState
             -> Input t
             -> m (Monster t)
-testMonster spriteManager input@Input{..} = do
+testMonster spriteManager MonsterState{..} input@Input{..} = do
   animSet@MonsterAnimSet{..} <- loadMonsterAnimSet spriteManager "fatc"
-  let initialPos = P (V2 61 68)
-      initialDir = DirSE
   initialActivity <- idling input animSet
-  action <- holdDyn initialActivity $ actions input animSet
-  let move = switchPromptlyDyn (activityMove <$> action)
-  pos <- foldDyn followDir initialPos move
+
+  rec action <- holdDyn initialActivity $ actions input pos animSet
+      pos <- foldDyn followDir monsterStatePosition $ switchPromptlyDyn (activityMove <$> action)
+  dir <- holdDyn monsterStateDirection $ switchPromptlyDyn $ activityRotate <$> action
   frame <- holdDyn (AnimationFrame 0 0) $ switchPromptlyDyn (activityAnimationFrame <$> action)
-  dir <- holdDyn initialDir $ switchPromptlyDyn $ activityRotate <$> action
   pure $ Monster (activityAnimation <$> action) frame pos dir never
 
 screenScroll :: (Reflex t, MonadHold t m, MonadFix m)
@@ -140,15 +152,13 @@ screenScroll initialPos keyPress = accum (\pos d -> pos + P d) initialPos camera
     moveDown   = V2 1 1       <$ ffilter (== KeycodeDown) keyPress
     cameraMove = leftmost [moveLeft, moveRight, moveUp, moveDown]
 
-hookLevelObjects :: (PerformEvent t m, MonadSample t (Performable m), MonadIO (Performable m), MonadIO m)
-                 => [Monster t]
-                 -> m LevelObjects
-hookLevelObjects monsters = do
-  levelObjects <- createLevelObjects
-  traverse (updateObject levelObjects) monsters
-  pure levelObjects
+hookMonsterMovement :: (PerformEvent t m, MonadSample t (Performable m), MonadIO (Performable m), MonadIO m)
+                    => LevelObjects
+                    -> [Monster t]
+                    -> m (Event t (NonEmpty (Coord, Coord)))
+hookMonsterMovement levelObjects monsters = mergeList <$> traverse hook monsters
   where
-    updateObject objs Monster{..} = do
+    hook Monster{..} = do
       let bPos = current monsterPosition -- so that we refer to position before update
           bAnim = current monsterAnim
           animUpdate = (,) <$> monsterDirection <*> monsterAnimationFrame
@@ -158,13 +168,15 @@ hookLevelObjects monsters = do
             Animation spriteGroup animLength <- sample bAnim
             spriteCacheIndex <- getSpriteCacheIndex spriteGroup
             let to = followDir (Direction dir) pos
-            updateLevelObject objs pos spriteCacheIndex (frame + dir * animLength) to dist)
+            updateLevelObject levelObjects pos spriteCacheIndex (frame + dir * animLength) to dist)
         <$> posFrame
       let fromTo = attach bPos (updated monsterPosition)
-      performEvent_ $ uncurry (moveLevelObject objs) <$> fromTo
+      performEvent_ $ uncurry (moveLevelObject levelObjects) <$> fromTo
+      pure fromTo
 
 game :: SpriteManager -> Level -> SDLApp t m
 game spriteManager level sel = do
+  levelObjects <- createLevelObjects
   let keyPress = fmap (keysymKeycode . keyboardEventKeysym) .
                  ffilter ((== Pressed) . keyboardEventKeyMotion) .
                  select sel $
@@ -172,10 +184,14 @@ game spriteManager level sel = do
       eQuit = void $ ffilter (== KeycodeEscape) keyPress
       tick = select sel SDLTick
   cameraPos <- screenScroll (P (V2 55 65)) keyPress
-  monster <- testMonster spriteManager (Input tick keyPress)
-  let monsters = [monster]
+
+  rec input <- pure $ Input tick keyPress moves level
+      monster1 <- testMonster spriteManager (MonsterState (P (V2 61 68)) DirSE) input
+      monster2 <- testMonster spriteManager (MonsterState (P (V2 65 70)) DirN) input
+      monsters <- pure [monster1, monster2]
+      moves <- hookMonsterMovement levelObjects monsters
+
   let game' = Game cameraPos monsters
-  levelObjects <- hookLevelObjects monsters
   performEvent_ $ renderGame spriteManager level levelObjects game' <$ tick
   performEvent_ $ liftIO quit <$ eQuit
   return eQuit

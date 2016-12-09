@@ -1,14 +1,17 @@
 name: hackslash
 
 dependencies:
+ - astar
  - base
  - foreign-store
+ - hashable
  - linear
  - mtl
  - rapid
  - reflex
  - reflex-sdl2
  - sdl2
+ - unordered-containers
 
 c-sources:
   - cbits/freeablo.cpp

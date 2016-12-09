@@ -19,6 +19,9 @@ extern "C" {
   uint32_t FARender_getSpriteCacheIndex(FARender::FASpriteGroup*);
   uint32_t FARender_getSpriteAnimLength(FARender::FASpriteGroup*);
   Level::Level* World_createTownLevel();
+  size_t Level_width(Level::Level*);
+  size_t Level_height(Level::Level*);
+  int32_t Level_passable(Level::Level*, size_t, size_t);
 }
 
 #endif
