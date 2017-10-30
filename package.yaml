@@ -3,6 +3,7 @@ name: hackslash
 dependencies:
  - astar
  - base
+ - containers
  - foreign-store
  - hashable
  - linear

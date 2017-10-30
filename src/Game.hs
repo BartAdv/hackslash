@@ -15,8 +15,11 @@ import Data.List.NonEmpty (NonEmpty)
 import Control.Monad (void, join, (<=<))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Fix (MonadFix)
+import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
+import Data.Map (Map)
+import qualified Data.Map as Map
 import GHC.Word (Word32)
 import Linear.V2
 import Linear.Affine
@@ -38,7 +41,7 @@ ticksPerSecond = 25
 
 data Game t = Game {
   gameCameraPos :: Behavior t Coord,
-  gameMonsters :: [Monster t]
+  gameMonsters :: Dynamic t (Map Int (Monster t))
 }
 
 type Health = Int
@@ -57,7 +60,7 @@ data Monster t = Monster
 data Input t = Input
   { inputTick :: Event t Word32
   , inputKeyPress :: Event t Keycode
-  , inputMoves :: Event t (NonEmpty (Coord, Coord))
+  , inputMoves :: Event t (Map Int (Coord, Coord))
   , inputLevel :: Level }
 
 type Path = [Direction]
@@ -126,13 +129,12 @@ data MonsterState = MonsterState
  , monsterStateDirection :: Direction
  }
 
-testMonster :: (Reflex t, MonadFix m, MonadHold t m, MonadIO m)
-            => SpriteManager
+testMonster :: (Reflex t, MonadFix m, MonadHold t m)
+            => MonsterAnimSet
             -> MonsterState
             -> Input t
             -> m (Monster t)
-testMonster spriteManager MonsterState{..} input@Input{..} = do
-  animSet@MonsterAnimSet{..} <- loadMonsterAnimSet spriteManager "fatc"
+testMonster animSet MonsterState{..} input@Input{..} = do
   initialActivity <- idling input animSet
 
   rec action <- holdDyn initialActivity $ actions input pos animSet
@@ -155,25 +157,32 @@ screenScroll initialPos keyPress = accum (\pos d -> pos + P d) initialPos camera
 
 hookMonsterMovement :: (PerformEvent t m, MonadSample t (Performable m), MonadIO (Performable m), MonadIO m)
                     => LevelObjects
-                    -> [Monster t]
-                    -> m (Event t (NonEmpty (Coord, Coord)))
-hookMonsterMovement levelObjects monsters = mergeList <$> traverse hook monsters
+                    -> Dynamic t (Map Int (Monster t))
+                    -> m (Event t (Map Int (Coord, Coord)))
+hookMonsterMovement levelObjects dMonsters = do
+  let frameEvs = switchPromptlyDyn (mergeMap . fmap frameEv <$> dMonsters)
+      moveEvs = switchPromptlyDyn (mergeMap . fmap moveEv <$> dMonsters)
+
+  performEvent_ $ traverse_
+    (\(Animation spriteGroup animLength, (pos, (Direction dir, AnimationFrame frame dist))) -> do
+        spriteCacheIndex <- getSpriteCacheIndex spriteGroup
+        let to = followDir (Direction dir) pos
+        updateLevelObject levelObjects pos spriteCacheIndex (frame + dir * animLength) to dist)
+    <$> frameEvs
+  performEvent_ $ traverse_ (uncurry (moveLevelObject levelObjects)) <$> moveEvs
+  pure moveEvs
   where
-    hook Monster{..} = do
+    -- This extract data needed to update the LevelObject' frame. But it does
+    -- this in so unreadable manner it hurts. Could be reworked bit...
+    frameEv Monster{..} =
       let bPos = current monsterPosition -- so that we refer to position before update
           bAnim = current monsterAnim
           animUpdate = (,) <$> monsterDirection <*> monsterAnimationFrame
           posFrame = (,) <$> monsterPosition <*> animUpdate
-      performEvent_ $
-        (\(pos, (Direction dir, AnimationFrame frame dist)) -> do
-            Animation spriteGroup animLength <- sample bAnim
-            spriteCacheIndex <- getSpriteCacheIndex spriteGroup
-            let to = followDir (Direction dir) pos
-            updateLevelObject levelObjects pos spriteCacheIndex (frame + dir * animLength) to dist)
-        <$> updated posFrame
-      let fromTo = attach bPos (updated monsterPosition)
-      performEvent_ $ uncurry (moveLevelObject levelObjects) <$> fromTo
-      pure fromTo
+      in attach bAnim $ updated posFrame
+    moveEv Monster{monsterPosition} =
+      let bPos = current monsterPosition -- so that we refer to position before update
+      in attach bPos $ updated monsterPosition
 
 game :: SpriteManager -> Level -> SDLApp t m
 game spriteManager level sel = do
@@ -183,15 +192,25 @@ game spriteManager level sel = do
                  select sel $
                  SDLKeyboard
       eQuit = void $ ffilter (== KeycodeEscape) keyPress
+      eSpawn = void $ ffilter (== KeycodeS) keyPress
       tick = select sel SDLTick
   cameraPos <- screenScroll (P (V2 55 65)) keyPress
 
+  fatc <- loadMonsterAnimSet spriteManager "fatc"
+
   rec input <- pure $ Input tick keyPress moves level
-      monster1 <- testMonster spriteManager (MonsterState (P (V2 61 68)) DirSE) input
-      monster2 <- testMonster spriteManager (MonsterState (P (V2 65 70)) DirN) input
-      monsters <- pure [ monster1
-                       , monster2
-                       ]
+      monster1 <- testMonster fatc (MonsterState (P (V2 61 68)) DirSE) input
+      monster2 <- testMonster fatc (MonsterState (P (V2 65 70)) DirN) input
+      let initialMonsters = Map.fromList [ (0, monster1)
+                                         , (1, monster2)
+                                         ]
+      monsters <- foldDynM (\_ ms -> do
+                               pos <- sample cameraPos
+                               monster <- testMonster fatc (MonsterState pos DirN) input
+                               pure $ Map.insert (Map.size ms) monster ms
+                           )
+                           initialMonsters
+                           eSpawn
       moves <- hookMonsterMovement levelObjects monsters
 
   let game' = Game cameraPos monsters
