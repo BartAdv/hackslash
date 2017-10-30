@@ -16,6 +16,7 @@ import Control.Monad (void, join, (<=<))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Fix (MonadFix)
 import Data.Maybe (fromMaybe)
+import Data.Monoid ((<>))
 import GHC.Word (Word32)
 import Linear.V2
 import Linear.Affine
@@ -162,14 +163,14 @@ hookMonsterMovement levelObjects monsters = mergeList <$> traverse hook monsters
       let bPos = current monsterPosition -- so that we refer to position before update
           bAnim = current monsterAnim
           animUpdate = (,) <$> monsterDirection <*> monsterAnimationFrame
-          posFrame = attach bPos (updated animUpdate)
+          posFrame = (,) <$> monsterPosition <*> animUpdate
       performEvent_ $
         (\(pos, (Direction dir, AnimationFrame frame dist)) -> do
             Animation spriteGroup animLength <- sample bAnim
             spriteCacheIndex <- getSpriteCacheIndex spriteGroup
             let to = followDir (Direction dir) pos
             updateLevelObject levelObjects pos spriteCacheIndex (frame + dir * animLength) to dist)
-        <$> posFrame
+        <$> updated posFrame
       let fromTo = attach bPos (updated monsterPosition)
       performEvent_ $ uncurry (moveLevelObject levelObjects) <$> fromTo
       pure fromTo
@@ -188,7 +189,9 @@ game spriteManager level sel = do
   rec input <- pure $ Input tick keyPress moves level
       monster1 <- testMonster spriteManager (MonsterState (P (V2 61 68)) DirSE) input
       monster2 <- testMonster spriteManager (MonsterState (P (V2 65 70)) DirN) input
-      monsters <- pure [monster1, monster2]
+      monsters <- pure [ monster1
+                       , monster2
+                       ]
       moves <- hookMonsterMovement levelObjects monsters
 
   let game' = Game cameraPos monsters
