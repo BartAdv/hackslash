@@ -66,14 +66,14 @@ data Input t = Input
   { inputTick :: Event t Word32
   , inputKeyPress :: Event t Keycode
   , inputPositions :: Dynamic t (Map MonsterID Coord)
-  , inputLevel :: Level }
-
-type Path = [Direction]
+  , inputLevel :: Level
+  , inputCameraPos :: Behavior t Coord
+  }
 
 data Activity t = Activity
   { activityAnimation :: Animation
   , activityAnimationFrame :: Event t AnimationFrame
-  , activityMove :: Event t Direction
+  , activityPosition :: Event t Coord
   , activityRotate :: Event t Direction
   }
 
@@ -83,22 +83,22 @@ walking :: (Reflex t, MonadHold t m, MonadFix m)
         -> MonsterAnimSet
         -> Path
         -> m (Activity t)
-walking start Input{..} animSet cmdPath = do
+walking start Input{inputTick} animSet cmdPath = do
   -- freeablo wants it to be a percentage of the way towards next square
   moveDist <- foldDyn (\acc d -> (acc + d) `mod` 100) 0 $ 10 <$ inputTick -- 10 is derived from: secondsPerTick * 250 from freeablo
   let moved = void $ ffilter (== 0) (updated moveDist)
       rotated = leftmost [start, moved] -- change direction at the beginning and on every move
   -- on move, drop the coord from path. Direction is "one step ahead" of movement
   path <- accum (\p _ -> drop 1 p) cmdPath moved
-  dirs <- accum (\p _ -> drop 1 p) cmdPath rotated
-  let moveDir = safeHeadE $ tag path moved
-      rotateDir = safeHeadE $ tag dirs rotated
+  let pos = safeHeadE $ tag path moved
+      rotateDir = dirs $ tag path rotated
   frame <- foldDyn (\acc d -> (acc + d) `mod` animationLength animation) 0 $ 1 <$ inputTick
   let animFrame = AnimationFrame <$> frame <*> moveDist
-  pure $ Activity animation (updated animFrame) moveDir rotateDir
+  pure $ Activity animation (updated animFrame) pos rotateDir
   where
     animation = animSetWalk animSet
     safeHeadE el = head <$> ffilter (not . null) el
+    dirs el = (\l -> let (a:[b]) = take 2 l in getDir a b) <$> ffilter (\l -> length l >= 2) el
 
 idling :: (Reflex t, MonadHold t m, MonadFix m)
        => Input t
@@ -110,7 +110,7 @@ idling Input{..} animSet = do
   let animFrame = (\f -> AnimationFrame f 0) <$> frame
   pure $ Activity animation animFrame never never
 
-data MonsterCmd = CmdIdle | CmdWalk Coord
+data MonsterCmd = CmdIdle | CmdWalk Coord deriving Show
 
 actions :: Reflex t
         => Input t
@@ -132,8 +132,7 @@ actions input@Input{..} pos animSet =
     cmdIdle = CmdIdle <$ ffilter (== KeycodeI) inputKeyPress
     eTarget = updated $ findTarget <$> pos <*> inputPositions
     cmdWalk = CmdWalk . fromJust <$> ffilter isJust eTarget
-    -- just to start moving
-    cmdGoTo = CmdWalk (Coord 40 40) <$ ffilter (== KeycodeW) inputKeyPress
+    cmdGoTo = traceEvent "goto" $ pushAlways (\_ -> CmdWalk <$> sample inputCameraPos) $ ffilter (== KeycodeW) inputKeyPress
 
 findTarget :: Coord -> Map MonsterID Coord -> Maybe Coord
 findTarget pos allMoves =
@@ -160,7 +159,7 @@ testMonster animSet MonsterState{..} input = do
   initialActivity <- idling input animSet
 
   rec action <- holdDyn initialActivity $ actions input pos animSet
-      pos <- foldDyn followDir monsterStatePosition $ switch (current $ activityMove <$> action)
+      pos <- holdDyn monsterStatePosition $ switch (current $ activityPosition <$> action)
   dir <- holdDyn monsterStateDirection $ switchPromptlyDyn $ activityRotate <$> action
   frame <- holdDyn (AnimationFrame 0 0) $ switchPromptlyDyn (activityAnimationFrame <$> action)
   pure $ Monster (activityAnimation <$> action) frame pos dir never
@@ -192,7 +191,7 @@ hookMonsterMovement levelObjects dMonsters = do
         updateLevelObject levelObjects pos spriteCacheIndex (frame + dir * animLength) to dist)
     <$> frameEvs
   performEvent_ $ traverse_ (uncurry (moveLevelObject levelObjects)) <$> moveEvs
-  pure $ (fmap snd) <$> moveEvs
+  pure $ fmap snd <$> moveEvs
   where
     -- extract event needed to update the LevelObject' frame
     frameEv Monster{..} =
@@ -217,11 +216,9 @@ game spriteManager level sel = do
 
   fatc <- loadMonsterAnimSet spriteManager "fatc"
 
-  rec input <- pure $ Input tick keyPress positions level
+  rec input <- pure $ Input tick keyPress positions level cameraPos
       monster1 <- testMonster fatc (MonsterState (P (V2 61 68)) DirSE) input
-      monster2 <- testMonster fatc (MonsterState (P (V2 65 70)) DirN) input
       let initialMonsters = Map.fromList [ (0, monster1)
-                                         , (1, monster2)
                                          ]
       monsters <- foldDynM (\_ ms -> do
                                pos <- sample cameraPos

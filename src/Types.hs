@@ -72,7 +72,7 @@ getDir from to =
     (0, 1)   -> DirSW
     (-1, 1)  -> DirW
     (-1, 0)  -> DirNW
-  where P (V2 dx dy) = from - to
+  where P (V2 dx dy) = to - from
 
 newtype MoveDist = MoveDist Int deriving (Show, Num, Enum, Eq, Ord, Real, Integral)
 

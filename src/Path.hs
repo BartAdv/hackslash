@@ -13,12 +13,13 @@ import System.IO.Unsafe
 import Freeablo
 import Types
 
+type Path = [Coord]
+
 {-# NOINLINE findPath #-}
-findPath :: Level -> Coord -> Coord -> Maybe [Direction]
+findPath :: Level -> Coord -> Coord -> Maybe Path
 findPath level start target =
   -- whooops :S
-  let path = unsafePerformIO $ aStarM graph dist (heuristic target) (pure . (== target)) (pure start)
-  in fmap (\coords -> zipWith getDir coords (start:coords)) path
+  unsafePerformIO $ aStarM graph dist (heuristic target) (pure . (== target)) (pure start)
   where
     graph :: MonadIO m => Coord -> m (HashSet Coord)
     graph coord = do
