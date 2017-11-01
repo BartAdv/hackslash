@@ -75,6 +75,7 @@ data Activity t = Activity
   , activityAnimationFrame :: Event t AnimationFrame
   , activityPosition :: Event t Coord
   , activityRotate :: Event t Direction
+  , activityDone :: Event t ()
   }
 
 walking :: (Reflex t, MonadHold t m, MonadFix m)
@@ -90,11 +91,13 @@ walking start Input{inputTick} animSet cmdPath = do
       rotated = leftmost [start, moved] -- change direction at the beginning and on every move
   -- on move, drop the coord from path. Direction is "one step ahead" of movement
   path <- accum (\p _ -> drop 1 p) cmdPath moved
-  let pos = safeHeadE $ tag path moved
+  let ePath = tag path moved
+      pos = safeHeadE ePath
       rotateDir = dirs $ tag path rotated
+      done = () <$ ffilter null ePath
   frame <- foldDyn (\acc d -> (acc + d) `mod` animationLength animation) 0 $ 1 <$ inputTick
   let animFrame = AnimationFrame <$> frame <*> moveDist
-  pure $ Activity animation (updated animFrame) pos rotateDir
+  pure $ Activity animation (updated animFrame) pos rotateDir done
   where
     animation = animSetWalk animSet
     safeHeadE el = head <$> ffilter (not . null) el
@@ -108,7 +111,7 @@ idling Input{..} animSet = do
   let animation = animSetIdle animSet
   frame <- accum (\acc d -> (acc + d) `mod` animationLength animation) 0 $ 1 <$ inputTick
   let animFrame = (\f -> AnimationFrame f 0) <$> frame
-  pure $ Activity animation animFrame never never
+  pure $ Activity animation animFrame never never never
 
 data MonsterCmd = CmdIdle | CmdWalk Coord deriving Show
 
@@ -116,8 +119,9 @@ actions :: Reflex t
         => Input t
         -> Dynamic t Coord
         -> MonsterAnimSet
+        -> Event t ()
         -> Event t (Activity t)
-actions input@Input{..} pos animSet =
+actions input@Input{..} pos animSet done =
   pushAlways (\case
                  CmdIdle -> idling input animSet
                  CmdWalk target -> do
@@ -125,14 +129,15 @@ actions input@Input{..} pos animSet =
                    path' <- sample (current path)
                    walking (void cmd) input animSet path') cmd
   where
-    cmd = leftmost [ cmdWalk
+    cmd = leftmost [ CmdIdle <$ done
+                   , cmdWalk
                    , cmdGoTo
                    , cmdIdle
                    ]
     cmdIdle = CmdIdle <$ ffilter (== KeycodeI) inputKeyPress
     eTarget = updated $ findTarget <$> pos <*> inputPositions
     cmdWalk = CmdWalk . fromJust <$> ffilter isJust eTarget
-    cmdGoTo = traceEvent "goto" $ pushAlways (\_ -> CmdWalk <$> sample inputCameraPos) $ ffilter (== KeycodeW) inputKeyPress
+    cmdGoTo = pushAlways (\_ -> CmdWalk <$> sample inputCameraPos) $ ffilter (== KeycodeW) inputKeyPress
 
 findTarget :: Coord -> Map MonsterID Coord -> Maybe Coord
 findTarget pos allMoves =
@@ -158,7 +163,8 @@ testMonster :: (Reflex t, MonadFix m, MonadHold t m)
 testMonster animSet MonsterState{..} input = do
   initialActivity <- idling input animSet
 
-  rec action <- holdDyn initialActivity $ actions input pos animSet
+  -- this just looks silly with so many switches around...
+  rec action <- holdDyn initialActivity $ actions input pos animSet (switch (current $ activityDone <$> action))
       pos <- holdDyn monsterStatePosition $ switch (current $ activityPosition <$> action)
   dir <- holdDyn monsterStateDirection $ switchPromptlyDyn $ activityRotate <$> action
   frame <- holdDyn (AnimationFrame 0 0) $ switchPromptlyDyn (activityAnimationFrame <$> action)
