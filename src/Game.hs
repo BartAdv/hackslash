@@ -16,10 +16,13 @@ import Control.Monad (void, join, (<=<))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Fix (MonadFix)
 import Data.Foldable (traverse_)
-import Data.Maybe (fromMaybe)
+import Data.Function ((&))
+import qualified Data.List as List
+import Data.Maybe (fromJust, fromMaybe, isJust, listToMaybe)
 import Data.Monoid ((<>))
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Ord (comparing)
 import GHC.Word (Word32)
 import Linear.V2
 import Linear.Affine
@@ -39,9 +42,11 @@ import Reflex.Dynamic (traceDyn)
 ticksPerSecond :: Int
 ticksPerSecond = 25
 
+type MonsterID = Int
+
 data Game t = Game {
   gameCameraPos :: Behavior t Coord,
-  gameMonsters :: Dynamic t (Map Int (Monster t))
+  gameMonsters :: Dynamic t (Map MonsterID (Monster t))
 }
 
 type Health = Int
@@ -105,7 +110,7 @@ idling Input{..} animSet = do
   let animFrame = (\f -> AnimationFrame f 0) <$> frame
   pure $ Activity animation animFrame never never
 
-data MonsterCmd = CmdIdle | CmdWalk
+data MonsterCmd = CmdIdle | CmdWalk Coord
 
 actions :: Reflex t
         => Input t
@@ -115,14 +120,31 @@ actions :: Reflex t
 actions input@Input{..} pos animSet =
   pushAlways (\case
                  CmdIdle -> idling input animSet
-                 CmdWalk -> do
-                   let path = fmap (\pos -> fromMaybe [] $ findPath inputLevel pos (pos + P (V2 10 5))) pos
+                 CmdWalk target -> do
+                   let path = fmap (\pos -> fromMaybe [] $ findPath inputLevel pos target) pos
                    path' <- sample (current path)
                    walking (void cmd) input animSet path') cmd
   where
-    cmd = leftmost [cmdWalk, cmdIdle]
+    cmd = leftmost [ cmdWalk
+                   , cmdGoTo
+                   , cmdIdle
+                   ]
     cmdIdle = CmdIdle <$ ffilter (== KeycodeI) inputKeyPress
-    cmdWalk = CmdWalk <$ ffilter (== KeycodeW) inputKeyPress
+    eTarget = uncurry findTarget <$> attachPromptlyDyn pos inputMoves
+    cmdWalk = CmdWalk . fromJust <$> ffilter isJust eTarget
+    -- just to start moving
+    cmdGoTo = CmdWalk (Coord 40 40) <$ ffilter (== KeycodeW) inputKeyPress
+
+findTarget :: Coord -> Map MonsterID (Coord, Coord) -> Maybe Coord
+findTarget pos allMoves =
+  allMoves
+  & Map.toList
+  & map (snd . snd)
+  & filter (\target -> target /= pos && distance' pos target < 5)
+  & List.sortBy (comparing (distance' pos))
+  & listToMaybe
+  where
+    distance' a b = distance (fromIntegral <$> a) (fromIntegral <$> b)
 
 data MonsterState = MonsterState
  { monsterStatePosition :: Coord
@@ -134,11 +156,11 @@ testMonster :: (Reflex t, MonadFix m, MonadHold t m)
             -> MonsterState
             -> Input t
             -> m (Monster t)
-testMonster animSet MonsterState{..} input@Input{..} = do
+testMonster animSet MonsterState{..} input = do
   initialActivity <- idling input animSet
 
   rec action <- holdDyn initialActivity $ actions input pos animSet
-      pos <- foldDyn followDir monsterStatePosition $ switchPromptlyDyn (activityMove <$> action)
+      pos <- foldDyn followDir monsterStatePosition $ switch (current $ activityMove <$> action)
   dir <- holdDyn monsterStateDirection $ switchPromptlyDyn $ activityRotate <$> action
   frame <- holdDyn (AnimationFrame 0 0) $ switchPromptlyDyn (activityAnimationFrame <$> action)
   pure $ Monster (activityAnimation <$> action) frame pos dir never
@@ -157,8 +179,8 @@ screenScroll initialPos keyPress = accum (\pos d -> pos + P d) initialPos camera
 
 hookMonsterMovement :: (PerformEvent t m, MonadSample t (Performable m), MonadIO (Performable m), MonadIO m)
                     => LevelObjects
-                    -> Dynamic t (Map Int (Monster t))
-                    -> m (Event t (Map Int (Coord, Coord)))
+                    -> Dynamic t (Map MonsterID (Monster t))
+                    -> m (Event t (Map MonsterID (Coord, Coord)))
 hookMonsterMovement levelObjects dMonsters = do
   let frameEvs = switchPromptlyDyn (mergeMap . fmap frameEv <$> dMonsters)
       moveEvs = switchPromptlyDyn (mergeMap . fmap moveEv <$> dMonsters)
