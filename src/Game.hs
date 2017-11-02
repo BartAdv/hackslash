@@ -115,30 +115,6 @@ idling Input{..} animSet = do
 
 data MonsterCmd = CmdIdle | CmdWalk Coord deriving Show
 
-actions :: Reflex t
-        => Input t
-        -> Dynamic t Coord
-        -> MonsterAnimSet
-        -> Event t ()
-        -> Event t (Activity t)
-actions input@Input{..} pos animSet done =
-  pushAlways (\case
-                 CmdIdle -> idling input animSet
-                 CmdWalk target -> do
-                   let path = fmap (\pos -> fromMaybe [] $ findPath inputLevel pos target) pos
-                   path' <- sample (current path)
-                   walking (void cmd) input animSet path') cmd
-  where
-    cmd = leftmost [ CmdIdle <$ done
-                   , cmdWalk
-                   , cmdGoTo
-                   , cmdIdle
-                   ]
-    cmdIdle = CmdIdle <$ ffilter (== KeycodeI) inputKeyPress
-    eTarget = updated $ findTarget <$> pos <*> inputPositions
-    cmdWalk = CmdWalk . fromJust <$> ffilter isJust eTarget
-    cmdGoTo = pushAlways (\_ -> CmdWalk <$> sample inputCameraPos) $ ffilter (== KeycodeW) inputKeyPress
-
 findTarget :: Coord -> Map MonsterID Coord -> Maybe Coord
 findTarget pos allMoves =
   allMoves
@@ -155,20 +131,56 @@ data MonsterState = MonsterState
  , monsterStateDirection :: Direction
  }
 
+data MonsterConfig t = MonsterConfig
+  { monsterConfigAnimSet :: MonsterAnimSet
+  , monsterConfigInitialState :: MonsterState
+  , monsterConfigActivity :: Dynamic t (Activity t)
+  }
+
+monster :: (Reflex t, MonadFix m, MonadHold t m)
+        => MonsterConfig t
+        -> m (Monster t)
+monster MonsterConfig{..} = do
+  let MonsterState{..} = monsterConfigInitialState
+      -- looks strange with all those switches...
+      actPos = switch (current $ activityPosition <$> monsterConfigActivity)
+      actRotate = switchPromptlyDyn $ activityRotate <$> monsterConfigActivity
+      actAnimFrame = switchPromptlyDyn (activityAnimationFrame <$> monsterConfigActivity)
+  pos <- holdDyn monsterStatePosition actPos
+  dir <- holdDyn monsterStateDirection actRotate
+  frame <- holdDyn (AnimationFrame 0 0) actAnimFrame
+  pure $ Monster (activityAnimation <$> monsterConfigActivity) frame pos dir never
+
 testMonster :: (Reflex t, MonadFix m, MonadHold t m)
             => MonsterAnimSet
             -> MonsterState
             -> Input t
             -> m (Monster t)
-testMonster animSet MonsterState{..} input = do
+testMonster animSet initialState input@Input{..} = do
   initialActivity <- idling input animSet
-
-  -- this just looks silly with so many switches around...
-  rec action <- holdDyn initialActivity $ actions input pos animSet (switch (current $ activityDone <$> action))
-      pos <- holdDyn monsterStatePosition $ switch (current $ activityPosition <$> action)
-  dir <- holdDyn monsterStateDirection $ switchPromptlyDyn $ activityRotate <$> action
-  frame <- holdDyn (AnimationFrame 0 0) $ switchPromptlyDyn (activityAnimationFrame <$> action)
-  pure $ Monster (activityAnimation <$> action) frame pos dir never
+  rec m <- monster (MonsterConfig animSet initialState activity)
+      let pos = monsterPosition m
+          done = switch (current $ activityDone <$> activity)
+      activity <- holdDyn initialActivity $ actions pos done
+  pure m
+  where
+    actions pos done =
+      pushAlways (\case
+                    CmdIdle -> idling input animSet
+                    CmdWalk target -> do
+                      currentPos <- sample $ current pos
+                      let path = fromMaybe [] $ findPath inputLevel currentPos target
+                      walking (void cmd) input animSet path) cmd
+      where
+        cmd = leftmost [ CmdIdle <$ done
+                       , cmdWalk
+                       , cmdGoTo
+                       , cmdIdle
+                       ]
+        cmdIdle = CmdIdle <$ ffilter (== KeycodeI) inputKeyPress
+        eTarget = updated $ findTarget <$> pos <*> inputPositions
+        cmdWalk = CmdWalk . fromJust <$> ffilter isJust eTarget
+        cmdGoTo = pushAlways (\_ -> CmdWalk <$> sample inputCameraPos) $ ffilter (== KeycodeW) inputKeyPress
 
 screenScroll :: (Reflex t, MonadHold t m, MonadFix m)
              => Coord
