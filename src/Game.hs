@@ -116,11 +116,11 @@ idling Input{..} animSet = do
 data MonsterCmd = CmdIdle | CmdWalk Coord deriving Show
 
 findTarget :: Coord -> Map MonsterID Coord -> Maybe Coord
-findTarget pos allMoves =
-  allMoves
+findTarget pos allPositions =
+  allPositions
   & Map.toList
   & map snd
-  & filter (\target -> target /= pos && distance' pos target < 5)
+  & filter (\target -> target /= pos && distance' pos target < 10)
   & List.sortBy (comparing (distance' pos))
   & listToMaybe
   where
@@ -170,16 +170,22 @@ testMonster animSet initialState input@Input{..} = do
                     CmdWalk target -> do
                       currentPos <- sample $ current pos
                       let path = fromMaybe [] $ findPath inputLevel currentPos target
+                      _ <- trace ("Path: " ++ show path) $ pure ()
                       walking (void cmd) input animSet path) cmd
       where
         cmd = leftmost [ CmdIdle <$ done
-                       , cmdWalk
+                       , cmdAttack
                        , cmdGoTo
                        , cmdIdle
                        ]
         cmdIdle = CmdIdle <$ ffilter (== KeycodeI) inputKeyPress
-        eTarget = updated $ findTarget <$> pos <*> inputPositions
-        cmdWalk = CmdWalk . fromJust <$> ffilter isJust eTarget
+        cmdAttack = pushAlways (\_ -> do
+                                   let dTarget = findTarget <$> pos <*> inputPositions
+                                   target <- sample $ current dTarget
+                                   vpos <- sample $ current pos
+                                   _ <- trace ("Target: " ++ show vpos ++ " -> " ++ show target) $ pure ()
+                                   pure $ maybe CmdIdle CmdWalk target)
+                               (ffilter (== KeycodeA) inputKeyPress)
         cmdGoTo = pushAlways (\_ -> CmdWalk <$> sample inputCameraPos) $ ffilter (== KeycodeW) inputKeyPress
 
 screenScroll :: (Reflex t, MonadHold t m, MonadFix m)
@@ -197,7 +203,7 @@ screenScroll initialPos keyPress = accum (\pos d -> pos + P d) initialPos camera
 hookMonsterMovement :: (PerformEvent t m, MonadSample t (Performable m), MonadIO (Performable m), MonadIO m)
                     => LevelObjects
                     -> Dynamic t (Map MonsterID (Monster t))
-                    -> m (Event t (Map MonsterID Coord))
+                    -> m ()
 hookMonsterMovement levelObjects dMonsters = do
   let frameEvs = switchPromptlyDyn (mergeMap . fmap frameEv <$> dMonsters)
       moveEvs = switchPromptlyDyn (mergeMap . fmap moveEv <$> dMonsters)
@@ -209,7 +215,6 @@ hookMonsterMovement levelObjects dMonsters = do
         updateLevelObject levelObjects pos spriteCacheIndex (frame + dir * animLength) to dist)
     <$> frameEvs
   performEvent_ $ traverse_ (uncurry (moveLevelObject levelObjects)) <$> moveEvs
-  pure $ fmap snd <$> moveEvs
   where
     -- extract event needed to update the LevelObject' frame
     frameEv Monster{..} =
@@ -236,40 +241,28 @@ game spriteManager level sel = do
 
   rec input <- pure $ Input tick keyPress positions level cameraPos
       monster1 <- testMonster fatc (MonsterState (P (V2 61 68)) DirSE) input
-      let initialMonsters = Map.fromList [ (0, monster1)
+      let initialMonsters = Map.fromList [ -- (0, monster1)
                                          ]
       monsters <- foldDynM (\_ ms -> do
                                pos <- sample cameraPos
-                               monster <- testMonster fatc (MonsterState pos DirN) input
+                               monster <- trace ("Spawn at: " ++ show pos) $ testMonster fatc (MonsterState pos DirN) input
                                pure $ Map.insert (Map.size ms) monster ms
                            )
                            initialMonsters
                            eSpawn
-      moves <- hookMonsterMovement levelObjects monsters
-      positions <- monsterPositions monsters moves
+      let positions = traceDyn "Positions" $ monsterPositions monsters
+      hookMonsterMovement levelObjects monsters
 
   let game' = Game cameraPos monsters
   performEvent_ $ renderGame spriteManager level levelObjects game' <$ tick
   performEvent_ $ liftIO quit <$ eQuit
   return eQuit
 
--- Calculate Dynamic with monster positions, given the monster move events
--- and spawn events (so that newly spawned monsters are visible to others).
-monsterPositions :: (Reflex t, MonadHold t m, MonadFix m)
+monsterPositions :: Reflex t
                  => Dynamic t (Map MonsterID (Monster t))
-                 -> Event t (Map MonsterID Coord)
-                 -> m (Dynamic t (Map MonsterID Coord))
-monsterPositions monsters moves = do
-    -- flip, so that difference works from updated
-    let eSpawned = (uncurry . flip) Map.difference <$> attach (current monsters) (updated monsters)
-    spawnedPositions <-
-      foldDynM (\spawnedMonsters _ ->
-                  Map.traverseWithKey (\_ m -> sample $ current $ monsterPosition m)
-                                      spawnedMonsters)
-                Map.empty
-                eSpawned
-    dMoves <- holdDyn Map.empty moves
-    pure $ Map.union <$> dMoves <*> spawnedPositions
+                 -> Dynamic t (Map MonsterID Coord)
+monsterPositions monsters =
+  joinDynThroughMap (Map.map monsterPosition <$> monsters)
 
 -- need to figure out correct monad stack, this looks tedious with all the liftIO
 renderGame :: (Reflex t, MonadSample t m, MonadIO m)
