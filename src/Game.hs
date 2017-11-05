@@ -16,7 +16,7 @@ import Control.Monad (void, join, (<=<))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Fix (MonadFix)
 import Data.Foldable (traverse_)
-import Data.Function ((&))
+import Data.Function ((&), on)
 import qualified Data.List as List
 import Data.Maybe (fromJust, fromMaybe, isJust, listToMaybe)
 import Data.Monoid ((<>))
@@ -66,6 +66,7 @@ data Input t = Input
   { inputTick :: Event t Word32
   , inputKeyPress :: Event t Keycode
   , inputPositions :: Dynamic t (Map MonsterID Coord)
+  , inputPushbacks :: Event t (Map MonsterID Coord)
   , inputLevel :: Level
   , inputCameraPos :: Behavior t Coord
   }
@@ -79,22 +80,24 @@ data Activity t = Activity
   }
 
 walking :: (Reflex t, MonadHold t m, MonadFix m)
-        => Event t ()
-        -> Input t
+        => Input t
+        -> Event t ()
+        -> Event t Coord
         -> MonsterAnimSet
         -> Path
         -> m (Activity t)
-walking start Input{inputTick} animSet cmdPath = do
+walking Input{inputTick} start pushback animSet cmdPath = do
   -- freeablo wants it to be a percentage of the way towards next square
   moveDist <- foldDyn (\acc d -> (acc + d) `mod` 100) 0 $ 10 <$ inputTick -- 10 is derived from: secondsPerTick * 250 from freeablo
-  let moved = void $ ffilter (== 0) (updated moveDist)
+  let moved = void $ ffilter (== 0) (updated moveDist) -- `updated`, so that it doesn't fire at the very beginning
       rotated = leftmost [start, moved] -- change direction at the beginning and on every move
   -- on move, drop the coord from path. Direction is "one step ahead" of movement
   path <- accum (\p _ -> drop 1 p) cmdPath moved
   let ePath = tag path moved
-      pos = safeHeadE ePath
+      -- take next pos, unless pushback
+      pos = leftmost [pushback, safeHeadE ePath]
       rotateDir = dirs $ tag path rotated
-      done = () <$ ffilter null ePath
+      done = leftmost [void pushback, void $ ffilter null ePath]
   frame <- foldDyn (\acc d -> (acc + d) `mod` animationLength animation) 0 $ 1 <$ inputTick
   let animFrame = AnimationFrame <$> frame <*> moveDist
   pure $ Activity animation (updated animFrame) pos rotateDir done
@@ -137,6 +140,7 @@ data MonsterConfig t = MonsterConfig
   , monsterConfigActivity :: Dynamic t (Activity t)
   }
 
+-- this, in fact should be called (or refactored more)  `gameObject`, or even `levelObject`
 monster :: (Reflex t, MonadFix m, MonadHold t m)
         => MonsterConfig t
         -> m (Monster t)
@@ -152,11 +156,12 @@ monster MonsterConfig{..} = do
   pure $ Monster (activityAnimation <$> monsterConfigActivity) frame pos dir never
 
 testMonster :: (Reflex t, MonadFix m, MonadHold t m)
-            => MonsterAnimSet
+            => MonsterID -- currently used to pass information about collisions, is it good idea?
+            -> MonsterAnimSet
             -> MonsterState
             -> Input t
             -> m (Monster t)
-testMonster animSet initialState input@Input{..} = do
+testMonster monsterID animSet initialState input@Input{..} = do
   initialActivity <- idling input animSet
   rec m <- monster (MonsterConfig animSet initialState activity)
       let pos = monsterPosition m
@@ -171,7 +176,7 @@ testMonster animSet initialState input@Input{..} = do
                       currentPos <- sample $ current pos
                       let path = fromMaybe [] $ findPath inputLevel currentPos target
                       _ <- trace ("Path: " ++ show path) $ pure ()
-                      walking (void cmd) input animSet path) cmd
+                      walking input (void cmd) cmdPushBack animSet path) cmd
       where
         cmd = leftmost [ CmdIdle <$ done
                        , cmdAttack
@@ -187,6 +192,7 @@ testMonster animSet initialState input@Input{..} = do
                                    pure $ maybe CmdIdle CmdWalk target)
                                (ffilter (== KeycodeA) inputKeyPress)
         cmdGoTo = pushAlways (\_ -> CmdWalk <$> sample inputCameraPos) $ ffilter (== KeycodeW) inputKeyPress
+        cmdPushBack = (fromJust . Map.lookup monsterID) <$> ffilter (Map.member monsterID) inputPushbacks
 
 screenScroll :: (Reflex t, MonadHold t m, MonadFix m)
              => Coord
@@ -200,13 +206,18 @@ screenScroll initialPos keyPress = accum (\pos d -> pos + P d) initialPos camera
     moveDown   = V2 1 1       <$ ffilter (== KeycodeDown) keyPress
     cameraMove = leftmost [moveLeft, moveRight, moveUp, moveDown]
 
+-- Hooks events that are necessary to update freeablo internal structures (`LevelObjects`)
+-- that are used by renderer. Returns 'pushback' event, which is a workaround for
+-- the limitation of `LevelObjects` that can only keep one object at given coord. This event
+-- should be then used by game objects to be 'pushed back' in order to prevent from
+-- occupying the same square.
 hookMonsterMovement :: (PerformEvent t m, MonadSample t (Performable m), MonadIO (Performable m), MonadIO m)
                     => LevelObjects
                     -> Dynamic t (Map MonsterID (Monster t))
-                    -> m ()
+                    -> m (Event t (Map MonsterID Coord))
 hookMonsterMovement levelObjects dMonsters = do
   let frameEvs = switchPromptlyDyn (mergeMap . fmap frameEv <$> dMonsters)
-      moveEvs = switchPromptlyDyn (mergeMap . fmap moveEv <$> dMonsters)
+      moveEvs = traceEvent "moveEvs" $ switchPromptlyDyn (mergeMap . fmap moveEv <$> dMonsters)
 
   performEvent_ $ traverse_
     (\(Animation spriteGroup animLength, (pos, Direction dir, AnimationFrame frame dist)) -> do
@@ -214,7 +225,13 @@ hookMonsterMovement levelObjects dMonsters = do
         let to = followDir (Direction dir) pos
         updateLevelObject levelObjects pos spriteCacheIndex (frame + dir * animLength) to dist)
     <$> frameEvs
-  performEvent_ $ traverse_ (uncurry (moveLevelObject levelObjects)) <$> moveEvs
+
+  -- collect move results
+  moveRes <- performEvent $ traverse (\(from, to) -> do res <- moveLevelObject levelObjects from to
+                                                        pure (from, res)) <$> moveEvs
+
+  -- Get the moves that ended up in 'from' position - the 'pushbacks'
+  pure $ ffilter (not . null) $ (Map.map snd . Map.filter (\(from, to) -> from == to)) <$> moveRes
   where
     -- extract event needed to update the LevelObject' frame
     frameEv Monster{..} =
@@ -239,19 +256,20 @@ game spriteManager level sel = do
 
   fatc <- loadMonsterAnimSet spriteManager "fatc"
 
-  rec input <- pure $ Input tick keyPress positions level cameraPos
-      monster1 <- testMonster fatc (MonsterState (P (V2 61 68)) DirSE) input
+  rec input <- pure $ Input tick keyPress positions pushbacks level cameraPos
+      monster1 <- testMonster 0 fatc (MonsterState (P (V2 61 68)) DirSE) input
       let initialMonsters = Map.fromList [ -- (0, monster1)
                                          ]
       monsters <- foldDynM (\_ ms -> do
                                pos <- sample cameraPos
-                               monster <- trace ("Spawn at: " ++ show pos) $ testMonster fatc (MonsterState pos DirN) input
-                               pure $ Map.insert (Map.size ms) monster ms
+                               let monsterID = Map.size ms
+                               monster <- trace ("Spawn at: " ++ show pos) $ testMonster monsterID fatc (MonsterState pos DirN) input
+                               pure $ Map.insert monsterID monster ms
                            )
                            initialMonsters
                            eSpawn
       let positions = traceDyn "Positions" $ monsterPositions monsters
-      hookMonsterMovement levelObjects monsters
+      pushbacks <- hookMonsterMovement levelObjects monsters
 
   let game' = Game cameraPos monsters
   performEvent_ $ renderGame spriteManager level levelObjects game' <$ tick
@@ -264,7 +282,6 @@ monsterPositions :: Reflex t
 monsterPositions monsters =
   joinDynThroughMap (Map.map monsterPosition <$> monsters)
 
--- need to figure out correct monad stack, this looks tedious with all the liftIO
 renderGame :: (Reflex t, MonadSample t m, MonadIO m)
            => SpriteManager
            -> Level

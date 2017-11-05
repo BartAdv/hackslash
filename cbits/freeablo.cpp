@@ -48,11 +48,17 @@ extern "C"
     delete levelObjects;
   }
 
-  void Render_moveLevelObject(Render::LevelObjects* levelObjects, int32_t fromX, int32_t fromY, int32_t toX, int32_t toY)
+  int32_t Render_moveLevelObject(Render::LevelObjects* levelObjects, int32_t fromX, int32_t fromY, int32_t toX, int32_t toY)
   {
-    // std::cout << "moveLevelObject " << fromX << "," << fromY << " -> " << toX << "," << toY << std::endl;
+    //std::cout << "moveLevelObject " << fromX << "," << fromY << " -> " << toX << "," << toY << std::endl;
+
+    if ((*levelObjects)[toX][toY].valid)
+      return 0;
+
     (*levelObjects)[toX][toY] = (*levelObjects)[fromX][fromY];
     (*levelObjects)[fromX][fromY].valid = false;
+
+    return 1;
   }
 
   void Render_setLevelObject(Render::LevelObjects* levelObjects, int32_t x, int32_t y

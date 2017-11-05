@@ -21,7 +21,7 @@ foreign import ccall "freeablo.h Render_quit" quitRendererFFI :: IO ()
 foreign import ccall "freeablo.h Render_renderFrame" renderFrameFFI :: Ptr () -> Ptr () -> Ptr () -> CInt -> CInt -> IO ()
 foreign import ccall "freeablo.h Render_createLevelObjects" createLevelObjectsFFI :: IO (Ptr ())
 foreign import ccall "freeablo.h Render_destroyLevelObjects" destroyLevelObjectsFFI :: Ptr () -> IO ()
-foreign import ccall "freeablo.h Render_moveLevelObject" moveLevelObjectFFI :: Ptr () -> CInt -> CInt -> CInt -> CInt -> IO ()
+foreign import ccall "freeablo.h Render_moveLevelObject" moveLevelObjectFFI :: Ptr () -> CInt -> CInt -> CInt -> CInt -> IO CInt
 foreign import ccall "freeablo.h Render_setLevelObject" setLevelObjectFFI :: Ptr () -> CInt -> CInt -> CInt -> CInt -> CInt -> CInt -> CInt -> CInt -> IO ()
 
 foreign import ccall "freeablo.h World_createTownLevel" createTownLevelFFI :: IO (Ptr ())
@@ -57,9 +57,10 @@ createLevelObjects = liftIO $ LevelObjects <$> createLevelObjectsFFI
 destroyLevelObjects :: MonadIO m => LevelObjects -> m ()
 destroyLevelObjects (LevelObjects ptr) = liftIO $ destroySpriteManagerFFI ptr
 
-moveLevelObject :: MonadIO m => LevelObjects -> Coord -> Coord -> m ()
-moveLevelObject (LevelObjects objs) (CoordXY fromX fromY) (CoordXY toX toY) =
-  liftIO $ moveLevelObjectFFI objs fromX fromY toX toY
+moveLevelObject :: MonadIO m => LevelObjects -> Coord -> Coord -> m Coord
+moveLevelObject (LevelObjects objs) from@(CoordXY fromX fromY) to@(CoordXY toX toY) = do
+  res <- liftIO $ moveLevelObjectFFI objs fromX fromY toX toY
+  pure $ if res /= 0 then to else from
 
 newtype SpriteCacheIndex = SpriteCacheIndex CInt
 
