@@ -14,34 +14,34 @@ dependencies:
  - sdl2
  - unordered-containers
 
-c-sources:
-  - cbits/freeablo.cpp
+# c-sources:
+#   - cbits/freeablo.cpp
 
-include-dirs:
-  include
-  freeablo/components
-  freeablo/apps/freeablo
+# include-dirs:
+#   include
+#   freeablo/components
+#   freeablo/apps/freeablo
 
-extra-lib-dirs:
-  freeablo/apps/freeablo
-  freeablo/extern/StormLib
+# extra-lib-dirs:
+#   freeablo/apps/freeablo
+#   freeablo/extern/StormLib
 
-extra-libraries:
-  freeablo_lib
-  RocketCore
-  GL
-  SDL2
-  png
-  SDL2_image
-  SDL2_mixer
-  Storm
-  boost_serialization
-  boost_python
-  boost_system
-  boost_filesystem
-  enet
-  python2.7
-  stdc++
+# extra-libraries:
+#   freeablo_lib
+#   RocketCore
+#   GL
+#   SDL2
+#   png
+#   SDL2_image
+#   SDL2_mixer
+#   Storm
+#   boost_serialization
+#   boost_python
+#   boost_system
+#   boost_filesystem
+#   enet
+#   python2.7
+#   stdc++
 
 executables:
   hackslash:

@@ -13,16 +13,16 @@ data MonsterAnimSet = MonsterAnimSet
   , animSetAttack :: Animation
   , animSetDie :: Animation }
 
-loadMonsterAnimSet :: MonadIO m => SpriteManager -> String -> m MonsterAnimSet
-loadMonsterAnimSet spriteMgr name = do
-  idle <- load "n"
-  walk <- load "w"
-  att  <- load "h"
-  die  <- load "d"
-  pure $ MonsterAnimSet idle walk att die
-  where
-    path suffix = "monsters/" ++ name ++ "/" ++ name ++ suffix ++ ".cl2"
-    load suffix = do
-      sg <- loadImage spriteMgr $ path suffix
-      len <- getSpriteAnimLength sg
-      pure $ Animation sg len
+-- loadMonsterAnimSet :: MonadIO m => SpriteManager -> String -> String -> m MonsterAnimSet
+-- loadMonsterAnimSet spriteMgr dir name = do
+--   idle <- load "n"
+--   walk <- load "w"
+--   att  <- load "h"
+--   die  <- load "d"
+--   pure $ MonsterAnimSet idle walk att die
+--   where
+--     path suffix = "monsters/" ++ dir ++ "/" ++ name ++ suffix ++ ".cl2"
+--     load suffix = do
+--       sg <- loadImage spriteMgr $ path suffix
+--       len <- getSpriteAnimLength sg
+--       pure $ Animation sg len
