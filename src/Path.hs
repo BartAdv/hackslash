@@ -25,9 +25,9 @@ findPath level start target =
   where
     graph :: Coord -> HashSet Coord
     graph coord =
-      let bounds = (Coord 0 0, P (V2 128 128)) -- . P <$> unsafePerformIO $ levelSize level
-          -- vertices = filter (unsafePerformIO . isPassable level) (neighbours bounds)
-      in fromList (neighbours bounds)
+      let bounds = (Coord 0 0, ) . P <$> unsafePerformIO $ levelSize level
+          vertices = filter (unsafePerformIO . isPassable level) (neighbours bounds)
+      in fromList vertices
       where
         neighbours bounds =
           let coords = filter (/= coord) $ range (coord - 1, coord + 1)

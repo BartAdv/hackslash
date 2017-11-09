@@ -28,8 +28,7 @@ import GHC.Word (Word32)
 import Linear.V2
 import Linear.Affine
 import Reflex
-import Reflex.SDL.Event
-import Reflex.SDL.Host
+import Reflex.SDL2 hiding (trace)
 import SDL hiding (Renderer, Event, trace)
 
 import Animation
@@ -209,55 +208,55 @@ screenScroll initialPos keyPress = accum (\pos d -> pos + P d) initialPos camera
 -- the limitation of `LevelObjects` that can only keep one object at given coord. This event
 -- should be then used by game objects to be 'pushed back' in order to prevent from
 -- occupying the same square.
--- hookMonsterMovement :: (PerformEvent t m, MonadSample t (Performable m), MonadIO (Performable m), MonadIO m)
---                     => LevelObjects
---                     -> Dynamic t (Map MonsterID (Monster t))
---                     -> m (Event t (Map MonsterID Coord))
--- hookMonsterMovement levelObjects dMonsters = do
---   let frameEvs = switchPromptlyDyn (mergeMap . fmap frameEv <$> dMonsters)
---       moveEvs = traceEvent "moveEvs" $ switchPromptlyDyn (mergeMap . fmap moveEv <$> dMonsters)
+hookMonsterMovement :: (PerformEvent t m, MonadSample t (Performable m), MonadIO (Performable m), MonadIO m)
+                    => LevelObjects
+                    -> Dynamic t (Map MonsterID (Monster t))
+                    -> m (Event t (Map MonsterID Coord))
+hookMonsterMovement levelObjects dMonsters = do
+  let frameEvs = switchPromptlyDyn (mergeMap . fmap frameEv <$> dMonsters)
+      moveEvs = traceEvent "moveEvs" $ switchPromptlyDyn (mergeMap . fmap moveEv <$> dMonsters)
 
---   performEvent_ $ traverse_
---     (\(Animation spriteGroup animLength, (pos, Direction dir, AnimationFrame frame dist)) -> do
---         spriteCacheIndex <- getSpriteCacheIndex spriteGroup
---         let to = followDir (Direction dir) pos
---         updateLevelObject levelObjects pos spriteCacheIndex (frame + dir * animLength) to dist)
---     <$> frameEvs
+  performEvent_ $ traverse_
+    (\(Animation spriteGroup animLength, (pos, Direction dir, AnimationFrame frame dist)) -> do
+        spriteCacheIndex <- getSpriteCacheIndex spriteGroup
+        let to = followDir (Direction dir) pos
+        updateLevelObject levelObjects pos spriteCacheIndex (frame + dir * animLength) to dist)
+    <$> frameEvs
 
---   -- collect move results
---   moveRes <- performEvent $ traverse (\(from, to) -> do res <- moveLevelObject levelObjects from to
---                                                         pure (from, res)) <$> moveEvs
+  -- collect move results
+  moveRes <- performEvent $ traverse (\(from, to) -> do res <- moveLevelObject levelObjects from to
+                                                        pure (from, res)) <$> moveEvs
 
---   -- Get the moves that ended up in 'from' position - the 'pushbacks'
---   pure $ ffilter (not . null) $ (Map.map snd . Map.filter (\(from, to) -> from == to)) <$> moveRes
---   where
---     -- extract event needed to update the LevelObject' frame
---     frameEv Monster{..} =
---       let posDirFrame = (,,) <$> monsterPosition <*> monsterDirection <*> monsterAnimationFrame
---       in attach (current monsterAnim) (updated posDirFrame)
---     -- extract event needed to move the LevelObject' on the grid
---     moveEv Monster{monsterPosition} =
---       -- attach current position to an event with updated position to obtain from -> to event
---       attach (current monsterPosition) (updated monsterPosition)
+  -- Get the moves that ended up in 'from' position - the 'pushbacks'
+  pure $ ffilter (not . null) $ (Map.map snd . Map.filter (\(from, to) -> from == to)) <$> moveRes
+  where
+    -- extract event needed to update the LevelObject' frame
+    frameEv Monster{..} =
+      let posDirFrame = (,,) <$> monsterPosition <*> monsterDirection <*> monsterAnimationFrame
+      in attach (current monsterAnim) (updated posDirFrame)
+    -- extract event needed to move the LevelObject' on the grid
+    moveEv Monster{monsterPosition} =
+      -- attach current position to an event with updated position to obtain from -> to event
+      attach (current monsterPosition) (updated monsterPosition)
 
-game :: SpriteManager -> Level -> SDLApp t m
-game spriteManager level sel = do
-  -- levelObjects <- createLevelObjects
-  let keyPress = fmap (keysymKeycode . keyboardEventKeysym) .
-                 ffilter ((== Pressed) . keyboardEventKeyMotion) .
-                 select sel $
-                 SDLKeyboard
+game :: (ReflexSDL2 r t m, (MonadSample t (Performable m))) => SpriteManager -> Level -> m ()
+game spriteManager level = do
+  levelObjects <- createLevelObjects
+  evKey <- getKeyboardEvent
+  let msPerTick = 1000 `div` ticksPerSecond
+  tick <- getDeltaTickEvent
+
+  let keyPress = (keysymKeycode . keyboardEventKeysym) <$> ffilter (\k -> keyboardEventKeyMotion k == Pressed) evKey
       eSpawn = traceEvent "eSpawn" $ void $ ffilter (== KeycodeS) keyPress
       eQuit = void $ ffilter (== KeycodeEscape) keyPress
-      tick = select sel SDLTick
   cameraPos <- screenScroll (P (V2 55 65)) keyPress
 
 
-  let fatc = MonsterAnimSet (Animation undefined 12) (Animation undefined 12) (Animation undefined 12) (Animation undefined 12)-- loadMonsterAnimSet spriteManager "fatc" "fatc"
+  fatc <- loadMonsterAnimSet spriteManager "fatc" "fatc"
 
   rec input <- pure $ Input tick keyPress positions pushbacks level cameraPos
-      monster1 <- testMonster 0 fatc (MonsterState (P (V2 61 68)) DirSE) input
-      let initialMonsters = Map.fromList [ (0, monster1)
+      -- monster1 <- testMonster 0 fatc (MonsterState (P (V2 61 68)) DirSE) input
+      let initialMonsters = Map.fromList [ -- (0, monster1)
                                          ]
       monsters <- traceDynWith (\ms -> "Monsters: " ++ show (Map.size ms)) <$>
                   foldDynM (\_ ms -> do
@@ -270,13 +269,12 @@ game spriteManager level sel = do
                            initialMonsters
                            eSpawn
       let positions = traceDyn "Positions" $ monsterPositions monsters
-          pushbacks = never
-      -- pushbacks <- hookMonsterMovement levelObjects monsters
+      pushbacks <- hookMonsterMovement levelObjects monsters
 
   let game' = Game cameraPos monsters
-  -- performEvent_ $ renderGame spriteManager level levelObjects game' <$ tick
+  performEvent_ $ renderGame spriteManager level levelObjects game' <$ tick
   performEvent_ $ liftIO quit <$ eQuit
-  return eQuit
+  pure ()
 
 monsterPositions :: Reflex t
                  => Dynamic t (Map MonsterID (Monster t))
@@ -284,12 +282,12 @@ monsterPositions :: Reflex t
 monsterPositions monsters =
   joinDynThroughMap (Map.map monsterPosition <$> monsters)
 
--- renderGame :: (Reflex t, MonadSample t m, MonadIO m)
---            => SpriteManager
---            -> Level
---            -> LevelObjects
---            -> Game t
---            -> m ()
--- renderGame spriteManager level levelObjects Game{..} = do
---   cameraPos@(P (V2 x y)) <- sample gameCameraPos
---   renderFrame spriteManager level levelObjects cameraPos
+renderGame :: (Reflex t, MonadSample t m, MonadIO m)
+           => SpriteManager
+           -> Level
+           -> LevelObjects
+           -> Game t
+           -> m ()
+renderGame spriteManager level levelObjects Game{..} = do
+  cameraPos@(P (V2 x y)) <- sample gameCameraPos
+  renderFrame spriteManager level levelObjects cameraPos

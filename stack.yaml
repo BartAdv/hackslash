@@ -1,16 +1,16 @@
-resolver: lts-9.11
+resolver: nightly-2017-11-09
 
 packages:
 - '.'
 
 - location:
     git: https://github.com/reflex-frp/reflex
-    commit: 36db894180d015fdd032d7d3a338e0b5ac9df4b4
+    commit: 60d2878142943487987feeeea108dbed5405f469
   extra-dep: true
 
 - location:
-    git: https://github.com/dalaing/reflex-sdl2
-    commit: d85ab65605b3d2a90f4380c5f883335953b299e4
+    git: https://github.com/schell/reflex-sdl2
+    commit: b2089accef02ee218a8ec7d909471b34f824f09e
   extra-dep: true
 
 extra-deps:

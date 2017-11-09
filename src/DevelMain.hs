@@ -4,7 +4,7 @@ import Rapid
 
 import Freeablo
 import Game
-import Reflex.SDL.Host
+import Reflex.SDL2
 
 update :: IO ()
 update = rapid 0 $ \r -> do
@@ -13,4 +13,4 @@ update = rapid 0 $ \r -> do
   spriteManager <- createRef r "spriteManager" createSpriteManager
   town <- createRef r "town" createTownLevel
   restart r "loop" $
-    sdlHost (Just ticksPerSecond) (game spriteManager town)
+    host () (game spriteManager town)
