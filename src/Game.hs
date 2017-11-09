@@ -78,32 +78,39 @@ data Activity t = Activity
   , activityDone :: Event t ()
   }
 
+-- TODO: what should be the args here? this is becoming a bit silly..
 walking :: (Reflex t, MonadHold t m, MonadFix m)
         => Input t
-        -> Event t ()
+        -> Coord
+        -> Event t () -- TODO: could as well have Event t Path instead of empty 'start' event
         -> Event t Coord
         -> MonsterAnimSet
         -> Path
         -> m (Activity t)
-walking Input{inputTick} start pushback animSet cmdPath = do
+walking Input{inputTick} startPos start pushback animSet cmdPath = do
   -- freeablo wants it to be a percentage of the way towards next square
   moveDist <- foldDyn (\acc d -> (acc + d) `mod` 100) 0 $ 10 <$ inputTick -- 10 is derived from: secondsPerTick * 250 from freeablo
   let moved = void $ ffilter (== 0) (updated moveDist) -- `updated`, so that it doesn't fire at the very beginning
       rotated = leftmost [start, moved] -- change direction at the beginning and on every move
+      -- calculate the directions along the path
+      dirs = zipWith getDir (startPos : cmdPath) cmdPath
   -- on move, drop the coord from path. Direction is "one step ahead" of movement
-  path <- accum (\p _ -> drop 1 p) cmdPath moved
-  let ePath = tag path moved
+  bPath <- accum (\p _ -> drop 1 p) cmdPath moved
+  bDirs <- accum (\p _ -> drop 1 p) dirs rotated
+  -- I'd love to simplify this bit. Basically, once bPath/bDirs update, we want to use
+  -- its current value, so we tag with corresponding changing event...
+  let ePos = tag bPath moved
+      eDir = tag bDirs rotated
       -- take next pos, unless pushback
-      pos = leftmost [pushback, safeHeadE ePath]
-      rotateDir = dirs $ tag path rotated
-      done = leftmost [void pushback, void $ ffilter null ePath]
+      pos = leftmost [pushback, safeHeadE ePos]
+      dir = safeHeadE eDir
+      done = leftmost [void pushback, void $ ffilter null ePos]
   frame <- foldDyn (\acc d -> (acc + d) `mod` animationLength animation) 0 $ 1 <$ inputTick
   let animFrame = AnimationFrame <$> frame <*> moveDist
-  pure $ Activity animation (updated animFrame) pos rotateDir done
+  pure $ Activity animation (updated animFrame) pos dir done
   where
     animation = animSetWalk animSet
     safeHeadE el = head <$> ffilter (not . null) el
-    dirs el = (\l -> let (a:[b]) = take 2 l in getDir a b) <$> ffilter (\l -> length l >= 2) el
 
 idling :: (Reflex t, MonadHold t m, MonadFix m)
        => Input t
@@ -171,7 +178,9 @@ testMonster monsterID animSet initialState input@Input{..} = do
     actions pos done =
       pushAlways (\case
                     CmdIdle -> idling input animSet
-                    CmdWalk path -> walking input (void cmd) cmdPushBack animSet path) cmd
+                    CmdWalk path -> do
+                      startPos <- sample (current pos)
+                      walking input startPos (void cmd) cmdPushBack animSet path) cmd
       where
       cmd = leftmost [ CmdIdle <$ done
                       , cmdApproach
