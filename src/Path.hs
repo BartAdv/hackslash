@@ -12,8 +12,6 @@ import GHC.Generics
 import Linear.Metric (distance)
 import System.IO.Unsafe
 
-import Debug.Trace
-
 import Freeablo
 import Types
 
@@ -21,7 +19,7 @@ type Path = [Coord]
 
 findPath :: Level -> Coord -> Coord -> Maybe Path
 findPath level start target =
-  aStar graph dist (heuristic target) (== target) (trace ("findPath: " ++ show start ++ " -> " ++ show target) start)
+  aStar graph dist (heuristic target) (== target) start
   where
     graph :: Coord -> HashSet Coord
     graph coord =

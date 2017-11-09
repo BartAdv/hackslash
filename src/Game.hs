@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -9,7 +8,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE ViewPatterns #-}
 module Game where
 
 import Data.List.NonEmpty (NonEmpty)
@@ -30,6 +28,7 @@ import Linear.Affine
 import Reflex
 import Reflex.SDL2 hiding (trace)
 import SDL hiding (Renderer, Event, trace)
+import System.Exit (exitSuccess)
 
 import Animation
 import Freeablo
@@ -63,7 +62,7 @@ data Monster t = Monster
   , monsterDie :: Event t () }
 
 data Input t = Input
-  { inputTick :: Event t Word32
+  { inputTick :: Event t ()
   , inputKeyPress :: Event t Keycode
   , inputPositions :: Dynamic t (Map MonsterID Coord)
   , inputPushbacks :: Event t (Map MonsterID Coord)
@@ -120,7 +119,7 @@ data MonsterCmd = CmdIdle | CmdWalk Path deriving Show
 
 findTarget :: Coord -> Map MonsterID Coord -> Maybe Coord
 findTarget pos allPositions =
-  (trace ("findTarget: " ++ show pos ++ ", " ++ show allPositions) allPositions)
+  allPositions
   & Map.toList
   & map snd
   & filter (\target -> target /= pos && distance' pos target < 10)
@@ -150,7 +149,7 @@ monster MonsterConfig{..} = do
       actPos = switch (current $ activityPosition <$> monsterConfigActivity)
       actRotate = switchPromptlyDyn $ activityRotate <$> monsterConfigActivity
       actAnimFrame = switchPromptlyDyn (activityAnimationFrame <$> monsterConfigActivity)
-  pos <- traceDyn "pos" <$> holdDyn monsterStatePosition actPos
+  pos <- holdDyn monsterStatePosition actPos
   dir <- holdDyn monsterStateDirection actRotate
   frame <- holdDyn (AnimationFrame 0 0) actAnimFrame
   pure $ Monster (activityAnimation <$> monsterConfigActivity) frame pos dir never
@@ -169,7 +168,7 @@ testMonster monsterID animSet initialState input@Input{..} = do
       activity <- holdDyn initialActivity (actions pos done)
   pure m
   where
-    actions pos done = traceEventWith (const "action!") $
+    actions pos done =
       pushAlways (\case
                     CmdIdle -> idling input animSet
                     CmdWalk path -> walking input (void cmd) cmdPushBack animSet path) cmd
@@ -180,9 +179,8 @@ testMonster monsterID animSet initialState input@Input{..} = do
                       , cmdIdle
                       ]
       cmdIdle = CmdIdle <$ ffilter (== KeycodeI) inputKeyPress
-      cmdApproach = traceEvent "cmdApproach" $
-                    let eTarget = traceEvent "eTarget" $ fromJust <$> ffilter isJust (uncurry findTarget <$> attachPromptlyDyn pos (updated inputPositions))
-                        ePath = init . fromJust <$> traceEvent "ePath" (ffilter isJust (uncurry (findPath inputLevel) <$> attachPromptlyDyn pos eTarget))
+      cmdApproach = let eTarget = fromJust <$> ffilter isJust (uncurry findTarget <$> attachPromptlyDyn pos (updated inputPositions))
+                        ePath = init . fromJust <$> ffilter isJust (uncurry (findPath inputLevel) <$> attachPromptlyDyn pos eTarget)
                     in CmdWalk <$> ePath
       cmdGoTo = push (\_ -> do
                          pos <- sample (current pos)
@@ -214,7 +212,7 @@ hookMonsterMovement :: (PerformEvent t m, MonadSample t (Performable m), MonadIO
                     -> m (Event t (Map MonsterID Coord))
 hookMonsterMovement levelObjects dMonsters = do
   let frameEvs = switchPromptlyDyn (mergeMap . fmap frameEv <$> dMonsters)
-      moveEvs = traceEvent "moveEvs" $ switchPromptlyDyn (mergeMap . fmap moveEv <$> dMonsters)
+      moveEvs = switchPromptlyDyn (mergeMap . fmap moveEv <$> dMonsters)
 
   performEvent_ $ traverse_
     (\(Animation spriteGroup animLength, (pos, Direction dir, AnimationFrame frame dist)) -> do
@@ -243,18 +241,18 @@ game :: (ReflexSDL2 r t m, (MonadSample t (Performable m))) => SpriteManager -> 
 game spriteManager level = do
   levelObjects <- createLevelObjects
   evKey <- getKeyboardEvent
-  let msPerTick = 1000 `div` ticksPerSecond
   tick <- getDeltaTickEvent
+  gameTick <- getRecurringTimerEventWithEventCode 0 (1000 `div` ticksPerSecond)
 
   let keyPress = (keysymKeycode . keyboardEventKeysym) <$> ffilter (\k -> keyboardEventKeyMotion k == Pressed) evKey
-      eSpawn = traceEvent "eSpawn" $ void $ ffilter (== KeycodeS) keyPress
+      eSpawn = void $ ffilter (== KeycodeS) keyPress
       eQuit = void $ ffilter (== KeycodeEscape) keyPress
   cameraPos <- screenScroll (P (V2 55 65)) keyPress
 
 
   fatc <- loadMonsterAnimSet spriteManager "fatc" "fatc"
 
-  rec input <- pure $ Input tick keyPress positions pushbacks level cameraPos
+  rec input <- pure $ Input gameTick keyPress positions pushbacks level cameraPos
       -- monster1 <- testMonster 0 fatc (MonsterState (P (V2 61 68)) DirSE) input
       let initialMonsters = Map.fromList [ -- (0, monster1)
                                          ]
@@ -268,13 +266,12 @@ game spriteManager level = do
                            )
                            initialMonsters
                            eSpawn
-      let positions = traceDyn "Positions" $ monsterPositions monsters
+      let positions = monsterPositions monsters
       pushbacks <- hookMonsterMovement levelObjects monsters
 
   let game' = Game cameraPos monsters
   performEvent_ $ renderGame spriteManager level levelObjects game' <$ tick
-  performEvent_ $ liftIO quit <$ eQuit
-  pure ()
+  performEvent_ $ liftIO quitGame <$ eQuit
 
 monsterPositions :: Reflex t
                  => Dynamic t (Map MonsterID (Monster t))
@@ -291,3 +288,7 @@ renderGame :: (Reflex t, MonadSample t m, MonadIO m)
 renderGame spriteManager level levelObjects Game{..} = do
   cameraPos@(P (V2 x y)) <- sample gameCameraPos
   renderFrame spriteManager level levelObjects cameraPos
+
+quitGame = do
+  quit
+  exitSuccess
